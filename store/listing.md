@@ -12,7 +12,7 @@ Everything below is ready to copy-paste into the [Developer Dashboard](https://c
 |---|---|
 | Name (EN) | Repodest for GitHub — Health & LLM Digest |
 | Name (FA locale) | رپودست برای گیت‌هاب — سلامت و دایجست LLM |
-| Version | 1.1.0 |
+| Version | 1.2.0 |
 | Category | Developer Tools |
 | Language | English (primary) + add Persian (fa) locale |
 | Website | https://mohsen-niksirat.github.io/repodest/ |
@@ -54,6 +54,9 @@ Select files — or use smart presets (🐞 Bug Hunter, 🏗️ Architecture, �
 
 📊 LANGUAGES
 Byte-accurate language breakdown using GitHub's own color palette.
+
+🧹 CODE SMELLS
+The files you digest are scanned for TODO/FIXME markers, console logging, var usage, loose equality, eval(), bare except and hardcoded IPs — with a density score per 1k lines.
 
 💾 QUOTA-FRIENDLY
 6h/1h caching plus conditional (ETag) revalidation — GitHub's 304 responses don't count against your rate limit.
@@ -98,6 +101,9 @@ Free, open source (MIT). Part of the Repodest family:
 
 📊 زبان‌ها
 تفکیک دقیق بر اساس بایت با پالت رنگی خود گیت‌هاب.
+
+🧹 بوی بد کد
+فایل‌های انتخابی برای دایجست از نظر TODO/FIXME، console.log، var، برابری سست، eval()، except بدون نوع و IP هاردکد اسکن می‌شوند — با امتیاز تراکم در هر هزار خط.
 
 💾 صرفه‌جویی در سهمیه
 کش ۶/۱ ساعته به‌همراه اعتبارسنجی شرطی (ETag) — پاسخ‌های ۳۰۴ گیت‌هاب از سهمیه شما کم نمی‌کنند.

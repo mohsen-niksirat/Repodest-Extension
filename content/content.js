@@ -78,7 +78,7 @@
       S.owner = r.owner; S.repo = r.repo; S.key = key;
       S.data = null; S.error = null; S.activity = null; S.activityError = null;
       S.sel.clear(); S.expanded.clear(); S.limits.clear(); S.search = '';
-      S.digestParts = null; S.digestStats = null;
+      S.digestParts = null; S.digestStats = null; S.smellScan = null;
       S.pull = pull; S.pullData = null; S.pullError = null;
       S.prxFocus = !!pull;
       if (S.pull) S.tab = 'prx'; else if (S.tab === 'prx') S.tab = 'health';
@@ -602,7 +602,7 @@
       '<button class="rp-btn rp-ghost rp-sm" data-action="llm" data-provider="claude" style="flex:1" title="Claude">🤖 Claude</button>' +
       '<button class="rp-btn rp-ghost rp-sm" data-action="llm" data-provider="chatgpt" style="flex:1" title="ChatGPT">💬 ChatGPT</button>' +
       '<button class="rp-btn rp-ghost rp-sm" data-action="llm" data-provider="gemini" style="flex:1" title="Gemini">✨ Gemini</button>' +
-      '</div></div>';
+      '</div>' + rpSmellHtml() + '</div>';
   }
 
   /* ---------- PR X-Ray tab ---------- */
@@ -654,6 +654,25 @@
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('prTopFiles')) + '</div>' + filesHtml + moreFiles + '</div>' +
       (d.truncated ? '<div class="rp-sec" style="font-size:11px;color:var(--text3)">⚠ ' + esc(t('prTruncated')) + '</div>' : '') +
       '<button class="rp-btn" data-action="prdigest" style="width:100%">' + esc(t('prCopyReview')) + '</button>';
+  }
+
+  function rpSmellHtml() {
+    const sm = S.smellScan;
+    if (!sm) return '';
+    if (sm.clean) {
+      return '<div class="rp-check ok" style="margin-top:12px"><span class="rp-ico">✓</span><span>' + esc(t('smellClean')) + '</span></div>';
+    }
+    const rules = Object.keys(sm.byRule).slice(0, 6).map(function (k) {
+      return '<span class="rp-topic">' + esc(k) + ' ×' + sm.byRule[k] + '</span>';
+    }).join('');
+    const topFiles = sm.files.slice(0, 3).map(function (f) {
+      return '<div class="rp-langrow"><span class="nm" style="direction:ltr">' + esc(f.path) + '</span><span class="pc">' + f.count + '</span></div>';
+    }).join('');
+    return '<div class="rp-sec" style="margin-top:14px">' +
+      '<div class="rp-sec-title">' + esc(t('smellTitle')) + ' · ' + sm.total + ' · ' + esc(t('smellDensity', { n: sm.perKloc })) + '</div>' +
+      '<div class="rp-topics">' + rules + '</div>' +
+      (topFiles ? '<div style="margin-top:6px">' + topFiles + '</div>' : '') +
+      '</div>';
   }
 
   /* ---------- activity tab ---------- */
@@ -851,6 +870,7 @@
     if (res.error === 'NO_SELECTION') { rpToast(t('noSelection')); return; }
     if (res.error === 'TOO_BIG') { rpToast(t('selectionTooBig')); return; }
     S.digestParts = res.parts; S.partIdx = 0; S.digestStats = res.stats;
+    S.smellScan = RPDigest.smellScan(res.sections || []);
     rpRenderTabBody();
     rpToast(S.digestParts.length > 1 ? t('digestParts', { n: S.digestParts.length }) : t('digestReady'));
   }

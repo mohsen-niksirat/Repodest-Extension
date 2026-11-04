@@ -277,6 +277,31 @@ T_PENDING.push((function () {
   T_OK(an2.verdict === 'low' && an2.changeType === 'docs', 'docs-only PR → low risk, docs type');
 })();
 
+/* ========== 13. code smell scan ========== */
+(function () {
+  console.log('smell scan');
+  var sm = RPDigest.smellScan([
+    { path: 'src/dirty.js', ext: 'js', content: '// TODO fix this\nvar x = 1;\nif (a == b) { console.log("hi"); }\nconst ip = "192.168.0.1";\neval("2+2");\n' },
+    { path: 'src/dirty.py', ext: 'py', content: 'try:\n    pass\nexcept:\n    pass\nfrom os import *\n' },
+    { path: 'src/clean.js', ext: 'js', content: 'const add = (a, b) => a + b;\nexport default add;\n' }
+  ]);
+  T_OK(sm.total >= 8, 'smell total ' + sm.total + ' >= 8');
+  T_OK(sm.byRule['TODO / FIXME / HACK'] === 1, 'todo rule');
+  T_OK(sm.byRule['console logging'] === 1, 'console rule');
+  T_OK(sm.byRule['var usage'] === 1, 'var rule');
+  T_OK(sm.byRule['loose equality (==)'] === 1, 'loose equality rule');
+  T_OK(sm.byRule['eval()'] === 1, 'eval rule');
+  T_OK(sm.byRule['hardcoded IP'] === 1, 'hardcoded IP rule (quoted only)');
+  T_OK(sm.byRule['bare except'] === 1, 'bare except rule (py)');
+  T_OK(sm.byRule['wildcard import'] === 1, 'wildcard import rule (py)');
+  T_OK(sm.files[0].path === 'src/dirty.js', 'top file sorted by count');
+  T_OK(sm.clean === false, 'not clean');
+
+  var clean = RPDigest.smellScan([{ path: 'src/clean.js', ext: 'js', content: 'const add = (a, b) => a + b;\n' }]);
+  T_OK(clean.clean === true && clean.total === 0, 'clean file → 0 smells');
+  T_OK(clean.perKloc === 0, 'clean density 0');
+})();
+
 globalThis.__RP_RESULTS_PROMISE = Promise.all(T_PENDING).then(function () {
   return { passed: T_PASSED, failed: T_FAILED };
 });

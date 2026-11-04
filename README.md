@@ -22,6 +22,7 @@ A Chrome extension (Manifest V3) that adds a sidebar to GitHub repository and **
 | 📈 **Live token estimates** | Context-aware budgeting for GPT-5, Claude, Gemini and Llama with auto-splitting into parts |
 | 📊 **Languages** | Byte-accurate breakdown with GitHub's own color palette |
 | 🔀 **Activity** | 52-week commit heatmap, top contributors, recent commits |
+| 🧹 **Code Smells** *(v1.2)* | Scans the files you digest for TODO/FIXME, console logging, `var`, loose equality, `eval()`, bare except, hardcoded IPs — with density per 1k lines |
 | 🌐 **Bilingual** | English & فارسی (RTL) — follows your browser language |
 | 🌗 **Theme-aware** | Matches GitHub's light/dark mode automatically |
 | ♿ **Accessible** *(v1.1)* | ARIA tabs with arrow-key navigation, dialog semantics, focus management |
@@ -35,6 +36,21 @@ A Chrome extension (Manifest V3) that adds a sidebar to GitHub repository and **
 5. Open any GitHub repo or PR page — click the **Repodest button** on the left edge (or press **Alt+R**)
 
 Also works in **Microsoft Edge** (`edge://extensions`, same steps).
+
+### Firefox (beta)
+
+A Firefox build ships in every GitHub Release (`repodest-extension-firefox-*.zip`):
+about:debugging → This Firefox → **Load Temporary Add-on** → pick `manifest.json`.
+Permanent install comes via [addons.mozilla.org](https://addons.mozilla.org/) once signed.
+
+## 🔨 Build
+
+```bash
+node tools/build.mjs          # → dist/repodest-extension-<v>.zip + firefox variant
+```
+
+Zero dependencies — includes its own ZIP writer; the Firefox variant patches the
+manifest (MV3 event page, gecko id, options_ui) automatically.
 
 ## 🔑 Optional: GitHub token
 
@@ -59,8 +75,9 @@ Repodest-Extension/
 │   └── content.js             # repo/PR page detection (Turbo-soft-nav aware) + sidebar UI
 ├── background/service-worker.js  # toolbar click / Alt+R → toggle sidebar
 ├── options/                   # settings page (PAT, language, theme, cache)
-├── tests/                     # 68-test suite + local E2E harness
-└── .github/workflows/         # CI (tests on every push) + Release (zip on tag)
+├── tests/                     # 81-test suite + local E2E harness
+├── tools/build.mjs            # zero-dep packer: store zip + Firefox variant
+└── .github/workflows/         # CI (tests on every push) + Release (zips on tag)
 ```
 
 - **Zero build step** — plain JS, no bundler, no CDN (MV3 CSP-safe)
@@ -71,11 +88,11 @@ Repodest-Extension/
 ## 🧪 Tests
 
 ```bash
-node tests/run-tests.js          # 68 assertions: health, digest × 5 formats, PR risk, cache, i18n
+node tests/run-tests.js          # 81 assertions: health, digest × 5 formats, PR risk, smells, cache, i18n
 node tests/harness-server.js     # E2E harness → http://127.0.0.1:8123/{owner}/{repo}?lang=fa&theme=light
 ```
 
-CI runs the suite on every push; tagging `v1.2.3` publishes a store-ready zip as a GitHub Release.
+CI runs the suite on every push; tagging `v1.2.3` publishes **store-ready Chrome and Firefox zips** as a GitHub Release.
 
 ## 🔒 Privacy
 
