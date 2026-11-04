@@ -1,0 +1,26 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack store-ready zip (no dev files)
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          zip -r "repodest-extension-${VERSION}.zip" . \
+            -x '.git/*' '.github/*' 'tests/*' 'store/*'
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" repodest-extension-*.zip \
+            --title "Repodest for GitHub ${GITHUB_REF_NAME}" \
+            --generate-notes

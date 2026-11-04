@@ -44,6 +44,7 @@
     sel: new Set(), treeRoot: null, expanded: new Set(), limits: new Map(), search: '',
     digestParts: null, partIdx: 0, digestStats: null,
     tab: 'health', open: false,
+    pull: null, pullData: null, pullLoading: false, pullError: null, prxFocus: false,
     settings: null, rateShown: false
   };
   const t = function (key, args) { return RPI18N.t(key, args || {}); };
@@ -53,7 +54,8 @@
     const m = location.pathname.match(/^\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:$|\/)/);
     if (!m) return null;
     if (RP_RESERVED.has(m[1].toLowerCase())) return null;
-    return { owner: m[1], repo: m[2] };
+    const pm = location.pathname.match(/\/pull\/(\d+)(?:$|\/)/);
+    return { owner: m[1], repo: m[2], pull: pm ? parseInt(pm[1], 10) : null };
   }
 
   let _routeTimer = null;
@@ -71,13 +73,23 @@
     }
     if (host) host.style.display = '';
     const key = r.owner + '/' + r.repo;
+    const pull = r.pull || null;
     if (key.toLowerCase() !== (S.key || '').toLowerCase()) {
       S.owner = r.owner; S.repo = r.repo; S.key = key;
       S.data = null; S.error = null; S.activity = null; S.activityError = null;
       S.sel.clear(); S.expanded.clear(); S.limits.clear(); S.search = '';
       S.digestParts = null; S.digestStats = null;
-      if (S.open) rpLoadRepo();
-      else rpRenderChrome();
+      S.pull = pull; S.pullData = null; S.pullError = null;
+      S.prxFocus = !!pull;
+      if (S.pull) S.tab = 'prx'; else if (S.tab === 'prx') S.tab = 'health';
+      rpRenderChrome();
+      if (S.open) { rpRenderTabBody(); rpLoadRepo(); if (S.pull) rpLoadPull(); }
+    } else if (pull !== S.pull) {
+      S.pull = pull; S.pullData = null; S.pullError = null;
+      S.prxFocus = !!pull;
+      if (pull) S.tab = 'prx'; else if (S.tab === 'prx') S.tab = 'health';
+      rpRenderChrome();
+      if (S.open) { rpRenderTabBody(); if (pull) rpLoadPull(); }
     }
   }
 
@@ -111,6 +123,24 @@
       S.loading = false;
       S.error = (e && e.code) ? e.code : 'UNKNOWN';
       rpRender();
+    }
+  }
+
+  async function rpLoadPull(force) {
+    if (!S.pull || S.pullLoading) return;
+    S.pullLoading = true; S.pullError = null;
+    rpRenderScorebar();
+    rpRenderTabBody();
+    try {
+      S.pullData = await RPApi.fetchPull(S.owner, S.repo, S.pull, { force: force });
+      S.pullLoading = false;
+      rpRenderScorebar();
+      rpRenderTabBody();
+    } catch (e) {
+      S.pullLoading = false;
+      S.pullError = (e && e.code) || 'UNKNOWN';
+      rpRenderScorebar();
+      rpRenderTabBody();
     }
   }
 
@@ -170,21 +200,17 @@
     root.className = 'rp-root';
     root.setAttribute('data-theme', 'dark');
     root.innerHTML =
-      '<button class="rp-fab" data-action="toggle" title="' + esc(t('open')) + '">' + RP_ICONS.logo + '</button>' +
-      '<aside class="rp-panel" id="rpPanel">' +
+      '<button class="rp-fab" data-action="toggle" title="' + esc(t('open')) + '" aria-label="' + esc(t('open')) + '">' + RP_ICONS.logo + '</button>' +
+      '<aside class="rp-panel" id="rpPanel" role="dialog" aria-label="' + esc(t('extName')) + '" tabindex="-1">' +
       '  <header class="rp-head">' +
       '    <div class="rp-brand"><span class="rp-logo">' + RP_ICONS.logo + '</span><span>Repodest</span><span class="rp-reponame" id="rpRepoName"></span></div>' +
-      '    <button class="rp-iconbtn" data-action="refresh" title="' + esc(t('refresh')) + '">' + RP_ICONS.refresh + '</button>' +
-      '    <button class="rp-iconbtn" data-action="settings" title="' + esc(t('settings')) + '">' + RP_ICONS.gear + '</button>' +
-      '    <button class="rp-iconbtn" data-action="toggle" title="' + esc(t('close')) + '">' + RP_ICONS.close + '</button>' +
+      '    <button class="rp-iconbtn" data-action="refresh" title="' + esc(t('refresh')) + '" aria-label="' + esc(t('refresh')) + '">' + RP_ICONS.refresh + '</button>' +
+      '    <button class="rp-iconbtn" data-action="settings" title="' + esc(t('settings')) + '" aria-label="' + esc(t('settings')) + '">' + RP_ICONS.gear + '</button>' +
+      '    <button class="rp-iconbtn" data-action="toggle" title="' + esc(t('close')) + '" aria-label="' + esc(t('close')) + '">' + RP_ICONS.close + '</button>' +
       '  </header>' +
       '  <div id="rpScorebar"></div>' +
-      '  <nav class="rp-tabs">' +
-      '    <button class="rp-tab" data-action="tab" data-tab="health">' + esc(t('tabHealth')) + '</button>' +
-      '    <button class="rp-tab" data-action="tab" data-tab="digest">' + esc(t('tabDigest')) + '</button>' +
-      '    <button class="rp-tab" data-action="tab" data-tab="activity">' + esc(t('tabActivity')) + '</button>' +
-      '  </nav>' +
-      '  <div class="rp-body" id="rpBody"></div>' +
+      '  <nav class="rp-tabs" id="rpTabs" role="tablist" aria-label="' + esc(t('extName')) + '"></nav>' +
+      '  <div class="rp-body" id="rpBody" role="region"></div>' +
       '  <footer class="rp-foot">' +
       '    <span class="rp-rate" id="rpRate" style="display:none"><span class="dot"></span><span class="rp-rateval"></span></span>' +
       '    <span style="opacity:.7">' + esc(t('noTracking')) + '</span>' +
@@ -205,6 +231,7 @@
       panel: root.querySelector('#rpPanel'),
       repoName: root.querySelector('#rpRepoName'),
       scorebar: root.querySelector('#rpScorebar'),
+      tabs: root.querySelector('#rpTabs'),
       body: root.querySelector('#rpBody'),
       rate: root.querySelector('#rpRate'),
       rateVal: root.querySelector('.rp-rateval'),
@@ -214,10 +241,26 @@
     shadow.addEventListener('click', rpClick);
     shadow.addEventListener('change', rpChange);
     shadow.addEventListener('input', rpInput);
+    shadow.addEventListener('keydown', rpTabKeys);
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && S.open) rpToggle(false);
     });
     RPApi.onRate(rpUpdateRate);
+  }
+
+  /* arrow-key navigation between tabs (RTL-aware) */
+  function rpTabKeys(e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const tab = e.target.closest ? e.target.closest('.rp-tab') : null;
+    if (!tab) return;
+    const tabs = Array.from(rpEls.tabs.querySelectorAll('.rp-tab'));
+    const i = tabs.indexOf(tab);
+    if (i < 0) return;
+    const rtl = RPI18N.isRTL();
+    const dir = e.key === 'ArrowRight' ? (rtl ? -1 : 1) : (rtl ? 1 : -1);
+    const next = tabs[(i + dir + tabs.length) % tabs.length];
+    if (next) { next.focus(); next.click(); }
+    e.preventDefault();
   }
 
   function rpApplyDirTheme() {
@@ -230,10 +273,18 @@
     if (!rpEls.panel) return;
     rpApplyDirTheme();
     rpEls.repoName.textContent = S.key || '';
-    rpEls.root.querySelectorAll('.rp-tab').forEach(function (b) {
-      b.classList.toggle('rp-active', b.dataset.tab === S.tab);
-    });
+    rpEls.tabs.innerHTML = rpTabsHtml();
     rpRenderScorebar();
+  }
+
+  function rpTabsHtml() {
+    const tabs = [['health', t('tabHealth')], ['digest', t('tabDigest')]];
+    if (S.pull) tabs.push(['prx', t('prTab')]);
+    tabs.push(['activity', t('tabActivity')]);
+    return tabs.map(function (tb) {
+      const sel = S.tab === tb[0];
+      return '<button class="rp-tab' + (sel ? ' rp-active' : '') + '" role="tab" aria-selected="' + sel + '" tabindex="' + (sel ? '0' : '-1') + '" data-action="tab" data-tab="' + tb[0] + '">' + esc(tb[1]) + '</button>';
+    }).join('');
   }
 
   function rpScoreColor(score) {
@@ -251,6 +302,7 @@
 
   function rpRenderScorebar() {
     if (!rpEls.scorebar) return;
+    if (S.pull) { rpRenderPRScorebar(); return; }
     if (S.loading || !S.data) { rpEls.scorebar.innerHTML = ''; rpEls.scorebar.style.display = 'none'; return; }
     const h = rpHealth();
     if (!h) { rpEls.scorebar.style.display = 'none'; return; }
@@ -260,7 +312,7 @@
     rpEls.scorebar.innerHTML =
       '<div class="rp-scorebar">' +
       '  <div class="rp-ring">' +
-      '    <svg width="64" height="64" viewBox="0 0 64 64">' +
+      '    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">' +
       '      <circle cx="32" cy="32" r="26" fill="none" stroke="var(--bg3)" stroke-width="6"/>' +
       '      <circle cx="32" cy="32" r="26" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + C + '" stroke-dashoffset="' + off + '"/>' +
       '    </svg>' +
@@ -272,6 +324,33 @@
       '      <span class="rp-chip"><span class="dot"></span>' + esc(t('healthScore')) + '</span>' +
       '      <span class="rp-chip">' + (S.data._cached ? esc(t('cached')) : esc(t('refreshed'))) + '</span>' +
       '      <span class="rp-chip">' + esc(S.data.branch) + '</span>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>';
+  }
+
+  function rpRenderPRScorebar() {
+    if (S.pullLoading || !S.pullData) { rpEls.scorebar.innerHTML = ''; rpEls.scorebar.style.display = 'none'; return; }
+    const an = analyzePR(S.pullData.pr, S.pullData.files);
+    const color = an.verdict === 'low' ? 'var(--green)' : an.verdict === 'medium' ? 'var(--yellow)' : 'var(--red)';
+    const verdict = an.verdict === 'low' ? t('prLow') : an.verdict === 'medium' ? t('prMedium') : t('prHigh');
+    const C = 163.36, off = C - (C * an.riskScore / 10);
+    rpEls.scorebar.style.display = '';
+    rpEls.scorebar.innerHTML =
+      '<div class="rp-scorebar">' +
+      '  <div class="rp-ring">' +
+      '    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">' +
+      '      <circle cx="32" cy="32" r="26" fill="none" stroke="var(--bg3)" stroke-width="6"/>' +
+      '      <circle cx="32" cy="32" r="26" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + C + '" stroke-dashoffset="' + off + '"/>' +
+      '    </svg>' +
+      '    <div class="rp-ringnum" style="color:' + color + '">' + an.riskScore + '</div>' +
+      '  </div>' +
+      '  <div class="rp-scoremeta">' +
+      '    <div class="rp-verdict" style="color:' + color + '">' + esc(verdict) + '</div>' +
+      '    <div class="rp-scoresub">' +
+      '      <span class="rp-chip">#' + S.pull + '</span>' +
+      '      <span class="rp-chip">+' + fmt(an.totals.add) + ' / \u2212' + fmt(an.totals.del) + '</span>' +
+      '      <span class="rp-chip">' + (S.pullData._cached ? esc(t('cached')) : esc(t('refreshed'))) + '</span>' +
       '    </div>' +
       '  </div>' +
       '</div>';
@@ -294,6 +373,10 @@
     if (!S.data) { rpEls.body.innerHTML = '<div class="rp-empty">' + esc(t('tagline')) + '</div>'; return; }
     if (S.tab === 'health') rpEls.body.innerHTML = rpHealthHtml();
     else if (S.tab === 'digest') rpEls.body.innerHTML = rpDigestHtml();
+    else if (S.tab === 'prx') {
+      if (!S.pullData && !S.pullError && !S.pullLoading) { rpLoadPull(); return; }
+      rpEls.body.innerHTML = S.pullError ? rpErrorHtml(S.pullError) : (S.pullData ? rpPRHtml() : '<div class="rp-spin"></div><div class="rp-empty">' + esc(t('loading')) + '</div>');
+    }
     else if (S.tab === 'activity') { rpEls.body.innerHTML = rpActivityHtml(); if (!S.activity && !S.activityError) rpLoadActivity(); }
   }
 
@@ -320,7 +403,7 @@
       { k: t('forks'), v: fmt(m.forks_count) },
       { k: t('openIssues'), v: fmt(m.open_issues_count) },
       { k: t('license'), v: m.license ? esc(m.license.spdx_id || m.license.key) : t('noLicense') },
-      { k: t('lastPush'), v: esc(timeAgo(m.pushed_at)) },
+      { k: t('lastPush'), v: esc(RPI18N.timeAgo(m.pushed_at)) },
       { k: t('size'), v: fmtSize((m.size || 0) * 1024) }
     ].map(function (f) { return '<div class="rp-fact"><div class="v">' + f.v + '</div><div class="k">' + esc(f.k) + '</div></div>'; }).join('');
 
@@ -405,13 +488,16 @@
 
   function rpTreeHtml() {
     if (!S.treeRoot) return '';
+    const trunc = S.data.tree && S.data.tree.truncated
+      ? '<div style="font-size:11px;color:var(--yellow);padding:6px 10px 0">⚠ ' + esc(t('treeTruncated')) + '</div>'
+      : '';
     return '<div class="rp-sec">' +
       '  <div class="rp-treebox">' +
       '    <div class="rp-treehead">' +
       '      <input class="rp-input" id="rpSearch" placeholder="' + esc(t('searchFiles')) + '" value="' + esc(S.search) + '">' +
       '      <button class="rp-btn rp-ghost rp-sm" data-action="selall">' + esc(t('selectAllText')) + '</button>' +
       '      <button class="rp-btn rp-ghost rp-sm" data-action="collapse">' + esc(t('collapseAll')) + '</button>' +
-      '    </div>' +
+      '    </div>' + trunc +
       '    <div class="rp-tree" id="rpTree">' + rpTreeInnerHtml() + '</div>' +
       '  </div>' +
       '</div>';
@@ -511,7 +597,63 @@
       '<div class="rp-outbtns">' +
       '<button class="rp-btn rp-sm" data-action="copy" style="flex:1">' + esc(t('copy')) + '</button>' +
       '<button class="rp-btn rp-ghost rp-sm" data-action="download" style="flex:1">' + esc(t('download')) + '</button>' +
+      '</div>' +
+      '<div class="rp-outbtns">' +
+      '<button class="rp-btn rp-ghost rp-sm" data-action="llm" data-provider="claude" style="flex:1" title="Claude">🤖 Claude</button>' +
+      '<button class="rp-btn rp-ghost rp-sm" data-action="llm" data-provider="chatgpt" style="flex:1" title="ChatGPT">💬 ChatGPT</button>' +
+      '<button class="rp-btn rp-ghost rp-sm" data-action="llm" data-provider="gemini" style="flex:1" title="Gemini">✨ Gemini</button>' +
       '</div></div>';
+  }
+
+  /* ---------- PR X-Ray tab ---------- */
+  function rpPRHtml() {
+    const d = S.pullData, pr = d.pr;
+    const an = analyzePR(pr, d.files);
+    const state = pr.merged_at ? 'merged' : (pr.draft ? 'draft' : (pr.state || 'open'));
+    const stateColor = state === 'merged' ? 'var(--accent)' : state === 'draft' ? 'var(--text3)' : state === 'closed' ? 'var(--red)' : 'var(--green)';
+
+    const addPct = an.totals.changes ? Math.round(an.totals.add / an.totals.changes * 100) : 50;
+    const bar = '<div class="rp-langbar" style="height:8px"><i style="width:' + addPct + '%;background:var(--green)" title="+' + fmt(an.totals.add) + '"></i><i style="width:' + (100 - addPct) + '%;background:var(--red)" title="\u2212' + fmt(an.totals.del) + '"></i></div>';
+
+    const facts = [
+      { k: t('prChangedFiles'), v: String(d.files.length) },
+      { k: t('prAdditions'), v: '+' + fmt(an.totals.add) },
+      { k: t('prDeletions'), v: '\u2212' + fmt(an.totals.del) },
+      { k: t('prType'), v: esc(an.changeType) },
+      { k: t('prSize'), v: esc(an.sizeClass) },
+      { k: t('prTestShare'), v: an.testShare + '%' }
+    ].map(function (f) { return '<div class="rp-fact"><div class="v">' + f.v + '</div><div class="k">' + esc(f.k) + '</div></div>'; }).join('');
+
+    const risks = an.risks.length
+      ? an.risks.map(function (r) {
+          return '<div class="rp-check bad"><span class="rp-ico">⚠</span><span>' + esc(r.label) + '</span><span class="rp-w">' + r.files.length + ' file' + (r.files.length > 1 ? 's' : '') + '</span></div>';
+        }).join('')
+      : '<div class="rp-check ok"><span class="rp-ico">✓</span><span>' + esc(t('prNoRisks')) + '</span></div>';
+
+    const topFiles = d.files.slice().sort(function (a, b) { return (b.changes || 0) - (a.changes || 0); }).slice(0, 12);
+    const filesHtml = topFiles.map(function (f) {
+      const tot = Math.max(1, (f.additions || 0) + (f.deletions || 0));
+      const ap = Math.round((f.additions || 0) / tot * 100);
+      return '<div class="rp-commit"><div class="m">' + esc(f.filename) + '</div>' +
+        '<div class="rp-langbar" style="height:5px;margin-top:4px"><i style="width:' + ap + '%;background:var(--green)"></i><i style="width:' + (100 - ap) + '%;background:var(--red)"></i></div>' +
+        '<div class="d"><span style="color:var(--green)">+' + (f.additions || 0) + '</span> <span style="color:var(--red)">\u2212' + (f.deletions || 0) + '</span></div></div>';
+    }).join('');
+    const moreFiles = d.files.length > 12 ? '<div class="rp-more" style="cursor:default">… +' + (d.files.length - 12) + ' ' + esc(t('files')) + '</div>' : '';
+
+    return '<div class="rp-sec">' +
+      '<div style="font-size:13.5px;font-weight:700;line-height:1.35">' + esc(pr.title || '') + '</div>' +
+      '<div class="rp-scoresub" style="margin-top:5px">' +
+      '<span class="rp-chip" style="color:' + stateColor + ';border-color:' + stateColor + '">' + esc(state) + '</span>' +
+      '<span class="rp-chip">#' + S.pull + '</span>' +
+      '<span class="rp-chip">' + esc(t('prBy')) + ' ' + esc(pr.user && pr.user.login || '?') + '</span>' +
+      '<span class="rp-chip" style="direction:ltr">' + esc(pr.head && pr.head.ref || '?') + ' → ' + esc(pr.base && pr.base.ref || '?') + '</span>' +
+      '</div></div>' +
+      '<div class="rp-sec">' + bar + '</div>' +
+      '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('repoFacts')) + '</div><div class="rp-facts">' + facts + '</div></div>' +
+      '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('prRisk')) + ' · ' + an.riskScore + '/10</div><div class="rp-checks">' + risks + '</div></div>' +
+      '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('prTopFiles')) + '</div>' + filesHtml + moreFiles + '</div>' +
+      (d.truncated ? '<div class="rp-sec" style="font-size:11px;color:var(--text3)">⚠ ' + esc(t('prTruncated')) + '</div>' : '') +
+      '<button class="rp-btn" data-action="prdigest" style="width:100%">' + esc(t('prCopyReview')) + '</button>';
   }
 
   /* ---------- activity tab ---------- */
@@ -556,7 +698,7 @@
         a.commits.map(function (c) {
           const msg = ((c.commit && c.commit.message) || '').split('\n')[0];
           const date = c.commit && c.commit.author && c.commit.author.date;
-          return '<div class="rp-commit"><div class="m">' + esc(msg) + '</div><div class="d">' + esc(timeAgo(date)) + '</div></div>';
+          return '<div class="rp-commit"><div class="m">' + esc(msg) + '</div><div class="d">' + esc(RPI18N.timeAgo(date)) + '</div></div>';
         }).join('') + '</div>';
     }
 
@@ -590,6 +732,21 @@
     else if (a === 'more') { S.limits.set(el.dataset.path, (S.limits.get(el.dataset.path) || 100) + 200); rpRefreshTree(); }
     else if (a === 'generate') { rpGenerate(el); }
     else if (a === 'copy') { rpCopy(); }
+    else if (a === 'llm') {
+      const ta = rpEls.root.querySelector('#rpOut');
+      const text = ta ? ta.value : '';
+      if (!text) return;
+      const urls = { claude: 'https://claude.ai/new', chatgpt: 'https://chatgpt.com/', gemini: 'https://gemini.google.com/app' };
+      const u = urls[el.dataset.provider];
+      if (u) window.open(u, '_blank', 'noopener'); /* sync — inside the user gesture */
+      rpCopyText(text, function () { rpToast(t('copied')); });
+    }
+    else if (a === 'prdigest') {
+      const d = S.pullData;
+      if (!d) return;
+      const an = analyzePR(d.pr, d.files);
+      rpCopyText(buildPRDigest(d.pr, d.files, an, {}), function () { rpToast(t('prReviewReady')); });
+    }
     else if (a === 'download') { rpDownload(); }
     else if (a === 'part') {
       S.partIdx = Math.max(0, Math.min(S.digestParts.length - 1, S.partIdx + Number(el.dataset.d)));
@@ -702,15 +859,21 @@
     const ta = rpEls.root.querySelector('#rpOut');
     const text = ta ? ta.value : '';
     if (!text) return;
-    const done = function () { rpToast(t('copied')); };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(function () { rpCopyFallback(ta, done); });
-    } else rpCopyFallback(ta, done);
+    rpCopyText(text, function () { rpToast(t('copied')); });
   }
-  function rpCopyFallback(ta, done) {
-    ta.removeAttribute('readonly'); ta.select();
+  function rpCopyText(text, done) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { rpCopyTextFallback(text, done); });
+    } else rpCopyTextFallback(text, done);
+  }
+  function rpCopyTextFallback(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
     try { document.execCommand('copy'); done(); } catch (e) {}
-    ta.setAttribute('readonly', '');
+    ta.remove();
   }
 
   function rpDownload() {
@@ -749,9 +912,13 @@
     const want = force !== undefined ? force : !S.open;
     S.open = want;
     if (want) {
+      if (S.prxFocus) { S.tab = 'prx'; S.prxFocus = false; }
       if (!S.data && !S.loading) rpLoadRepo();
       rpRenderChrome();
       rpRenderTabBody();
+      try { rpEls.panel.focus(); } catch (e) {}
+    } else {
+      try { rpEls.fab.focus(); } catch (e) {}
     }
     rpEls.panel.classList.toggle('rp-open', want);
   }

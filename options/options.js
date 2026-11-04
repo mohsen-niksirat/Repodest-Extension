@@ -88,6 +88,7 @@ async function testPat() {
 function fmtNum(n) { n = Number(n) || 0; return n >= 1000 ? (n / 1000).toFixed(0) + 'k' : String(n); }
 
 (async function init() {
+  try { const v = document.querySelector('.ver'); if (v && chrome.runtime && chrome.runtime.getManifest) v.textContent = 'v' + chrome.runtime.getManifest().version; } catch (e) {}
   const s = await RPApi.getSettings();
   OPT_LANG = (s.lang === 'fa' || s.lang === 'en') ? s.lang : ((navigator.language || 'en').toLowerCase().startsWith('fa') ? 'fa' : 'en');
   applyI18n();

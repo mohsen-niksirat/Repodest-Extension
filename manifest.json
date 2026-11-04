@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Repodest for GitHub",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Health score, language breakdown, activity and LLM-ready digests for any GitHub repo — right on the repo page. 100% client-side, no tracking.",
   "author": "Mohsen Niksirat",
   "homepage_url": "https://mohsen-niksirat.github.io/repodest/",

@@ -12,7 +12,7 @@ Everything below is ready to copy-paste into the [Developer Dashboard](https://c
 |---|---|
 | Name (EN) | Repodest for GitHub — Health & LLM Digest |
 | Name (FA locale) | رپودست برای گیت‌هاب — سلامت و دایجست LLM |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Category | Developer Tools |
 | Language | English (primary) + add Persian (fa) locale |
 | Website | https://mohsen-niksirat.github.io/repodest/ |
@@ -21,9 +21,9 @@ Everything below is ready to copy-paste into the [Developer Dashboard](https://c
 
 **EN:**
 ```
-Health score, languages, activity & LLM-ready digests for any GitHub repo — right on the page. 100% client-side, no tracking.
+Health score, PR risk reports, languages & LLM-ready digests for any GitHub repo or pull request — right on the page. No tracking.
 ```
-(125 chars ✓)
+(126 chars ✓)
 
 **FA:**
 ```
@@ -40,6 +40,9 @@ Repodest adds a sidebar to every GitHub repository page:
 🩺 HEALTH SCORE
 10 weighted checks (license, README, tests, CI, docs, freshness…) distilled into one honest number with an animated ring.
 
+🔀 PR X-RAY
+Open any pull request → risk score 0–10, weighted flags (auth, migrations, CI/CD, secrets…), change type, size class, test share — plus a one-click review digest for your LLM.
+
 🤖 LLM DIGEST (hero feature)
 Select files — or use smart presets (🐞 Bug Hunter, 🏗️ Architecture, 🛡️ Security Audit) — and generate a prompt you can paste straight into ChatGPT, Claude or Gemini.
 • Output formats: Markdown, XML, JSON, llms.txt, Repomix
@@ -47,9 +50,13 @@ Select files — or use smart presets (🐞 Bug Hunter, 🏗️ Architecture, �
 • 🗜️ Signatures-only mode for ultra-compact digests
 • Live token estimates for GPT-5, Claude, Gemini and Llama
 • Auto-splitting when the selection exceeds the model's context window
+• 📤 Send-to-LLM buttons: opens Claude / ChatGPT / Gemini with the digest on your clipboard
 
 📊 LANGUAGES
 Byte-accurate language breakdown using GitHub's own color palette.
+
+💾 QUOTA-FRIENDLY
+6h/1h caching plus conditional (ETag) revalidation — GitHub's 304 responses don't count against your rate limit.
 
 📈 ACTIVITY
 52-week commit heatmap, recent commits and contributor stats.
@@ -77,6 +84,9 @@ Free, open source (MIT). Part of the Repodest family:
 🩺 امتیاز سلامت
 ۱۰ بررسی وزن‌دار (مجوز، README، تست‌ها، CI، مستندات، تازگی…) در یک عدد صادقانه با حلقهٔ متحرک.
 
+🔀 اشعه ایکس PR
+هر پول‌ریکوئست را باز کنید → امتیاز ریسک ۰–۱۰، پرچم‌های وزن‌دار (احراز هویت، مایگریشن، CI/CD، اسرار…)، نوع تغییر، کلاس اندازه، سهم تست — به‌همراه دایجست بازبینی یک‌کلیکی برای LLM شما.
+
 🤖 دایجست LLM (فیچر اصلی)
 فایل‌ها را انتخاب کنید — یا از پریست‌های هوشمند (🐞 شکارچی باگ، 🏗️ معماری، 🛡️ ممیزی امنیت) استفاده کنید — و پرامپتی بسازید که مستقیم در ChatGPT، Claude یا Gemini پیست می‌شود.
 • فرمت‌های خروجی: Markdown، XML، JSON، llms.txt، Repomix
@@ -84,9 +94,13 @@ Free, open source (MIT). Part of the Repodest family:
 • 🗜️ حالت فقط-امضاها برای خلاصهٔ فوق فشرده
 • تخمین زندهٔ توکن برای GPT-5، Claude، Gemini و Llama
 • تقسیم خودکار وقتی انتخاب از پنجرهٔ زمینهٔ مدل بزرگ‌تر باشد
+• 📤 دکمه‌های ارسال به LLM: با یک کلیک Claude / ChatGPT / Gemini باز می‌شود و دایجست روی کلیپ‌بورد است
 
 📊 زبان‌ها
 تفکیک دقیق بر اساس بایت با پالت رنگی خود گیت‌هاب.
+
+💾 صرفه‌جویی در سهمیه
+کش ۶/۱ ساعته به‌همراه اعتبارسنجی شرطی (ETag) — پاسخ‌های ۳۰۴ گیت‌هاب از سهمیه شما کم نمی‌کنند.
 
 📈 فعالیت
 نقشهٔ حرارتی ۵۲ هفتهٔ کامیت‌ها، کامیت‌های اخیر و آمار مشارکت‌کنندگان.
@@ -108,7 +122,7 @@ Free, open source (MIT). Part of the Repodest family:
 
 | Question | Answer |
 |---|---|
-| Single purpose description | Adds an analysis sidebar (health score, languages, activity, LLM digest) to GitHub repository pages. |
+| Single purpose description | Adds an analysis sidebar (repo health, languages, activity, LLM digest, pull-request risk report) to GitHub repository and pull-request pages. |
 | Permission: `storage` | Stores your settings, optional GitHub token, and a local 6-hour cache of repo data on your device. |
 | Permission: `unlimitedStorage` | Large repositories can exceed the default local-storage quota; the cache needs room. |
 | Permission: `activeTab` + `scripting` | Lets the toolbar button inject the sidebar into the current GitHub tab if it was opened before installation. |
@@ -122,10 +136,10 @@ Free, open source (MIT). Part of the Repodest family:
 Store screenshots: **1280×800** (or 640×400), JPG/PNG, up to 5. After installing, capture:
 
 1. ☐ Health tab open on a well-known repo (dark theme) — hero shot
-2. ☐ Digest tab with files selected + generated output visible
-3. ☐ Health tab on a repo with a mid-range score (shows ✓/✗ mix)
-4. ☐ Persian/RTL version (Settings → Language → فارسی)
-5. ☐ Activity tab with the 52-week heatmap
+2. ☐ PR X-Ray tab on a real pull request (risk flags visible)
+3. ☐ Digest tab with files selected + generated output + Send-to-LLM buttons
+4. ☐ Health tab on a repo with a mid-range score (shows ✓/✗ mix)
+5. ☐ Persian/RTL version (Settings → Language → فارسی)
 
 Tip: open `chrome://extensions` → Repodest → Details → and use Windows `Win+Shift+S` on a maximized window at 100% zoom for crisp 1280×800 captures.
 
