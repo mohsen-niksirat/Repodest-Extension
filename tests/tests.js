@@ -302,6 +302,61 @@ T_PENDING.push((function () {
   T_OK(clean.perKloc === 0, 'clean density 0');
 })();
 
+/* ========== 14. dependency manifest parsers ========== */
+(function () {
+  console.log('manifest parsers');
+  var npm = RPApi.parseDeps('package.json', JSON.stringify({
+    dependencies: { lodash: '^4.17.15', 'left-pad': '~1.3.0', x: '1.2.3', y: '*', z: 'git+https://github.com/x/y.git' }
+  }));
+  T_OK(npm.length === 3, 'npm: 3 pinned deps, got ' + npm.length);
+  T_OK(npm.some(function (d) { return d.name === 'lodash' && d.version === '4.17.15' && d.eco === 'npm'; }), 'npm lodash ^4.17.15 → 4.17.15');
+  T_OK(npm.some(function (d) { return d.name === 'left-pad' && d.version === '1.3.0'; }), 'npm left-pad ~1.3.0 → 1.3.0');
+
+  var req = RPApi.parseDeps('requirements.txt', 'requests==2.31.0\nflask>=2.0\n# comment\nDjango===4.2\n-r other.txt\n');
+  T_OK(req.length === 2, 'PyPI: 2 pinned deps, got ' + req.length);
+  T_OK(req.some(function (d) { return d.name === 'requests' && d.version === '2.31.0' && d.eco === 'PyPI'; }), 'PyPI requests==2.31.0');
+  T_OK(req.some(function (d) { return d.name === 'django' && d.version === '4.2'; }), 'PyPI Django normalized to django');
+
+  var go = RPApi.parseDeps('go.mod', 'module x\n\ngo 1.21\n\nrequire (\n\tgithub.com/pkg/errors v0.9.1\n)\nrequire golang.org/x/mod v0.14.0\n');
+  T_OK(go.length === 2, 'Go: 2 deps, got ' + go.length);
+  T_OK(go.some(function (d) { return d.name === 'github.com/pkg/errors' && d.version === '0.9.1' && d.eco === 'Go'; }), 'Go module version stripped');
+
+  var cargo = RPApi.parseDeps('Cargo.toml', '[dependencies]\nserde = "1.0.190"\nrand = { version = "0.8.5", features = [] }\n\n[dev-dependencies]\ntempfile = "3.8.0"\n');
+  T_OK(cargo.length === 2, 'Cargo: [dependencies] only, got ' + cargo.length);
+  T_OK(cargo.every(function (d) { return d.name !== 'tempfile'; }), 'Cargo: dev-dependencies excluded');
+  T_OK(cargo.some(function (d) { return d.name === 'serde' && d.version === '1.0.190' && d.eco === 'crates.io'; }), 'Cargo serde');
+
+  T_OK(RPApi.parseDeps('package.json', 'not json').length === 0, 'invalid JSON → no deps');
+})();
+
+/* ========== 15. OSV client (mocked fetch) ========== */
+T_PENDING.push((function () {
+  console.log('osv client');
+  globalThis.fetch = function (url, opts) {
+    globalThis.__lastFetch = { url: url, opts: opts };
+    return Promise.resolve({
+      ok: true, status: 200,
+      headers: { get: function () { return null; } },
+      json: function () {
+        return Promise.resolve({ results: [{ vulns: [{ id: 'GHSA-1' }, { id: 'GHSA-2' }] }, {}] });
+      },
+      text: function () {
+        return Promise.resolve('{"dependencies":{"lodash":"4.17.15"}}');
+      }
+    });
+  };
+  return RPApi.osvQueryBatch([{ package: { name: 'lodash', ecosystem: 'npm' }, version: '4.17.15' }]).then(function (results) {
+    T_OK(results.length === 2 && results[0].vulns.length === 2, 'querybatch parses results');
+    T_OK(globalThis.__lastFetch.url.indexOf('api.osv.dev/v1/querybatch') !== -1, 'osv endpoint used');
+    T_OK(JSON.parse(globalThis.__lastFetch.opts.body).queries.length === 1, 'body carries queries');
+    return RPApi.scanVulns('acme', 'widget', 'main', { tree: [{ path: 'package.json', type: 'blob', size: 40 }] });
+  }).then(function (scan) {
+    T_OK(scan.scanned === 1 && scan.deps[0].name === 'lodash', 'scanVulns parsed the manifest');
+    T_OK(scan.vulns.length === 1 && scan.vulns[0].pkg === 'lodash', 'vulnerable package detected');
+    T_OK(scan.total === 2, 'vuln total counts ids');
+  });
+})());
+
 globalThis.__RP_RESULTS_PROMISE = Promise.all(T_PENDING).then(function () {
   return { passed: T_PASSED, failed: T_FAILED };
 });

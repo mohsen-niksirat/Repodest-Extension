@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================================
-   Local E2E harness — serves the extension files into a
+   Local E2E harness â€” serves the extension files into a
    GitHub-like page at /{owner}/{repo} so the content script's
    URL detection activates without loading the extension.
    Real api.github.com calls flow (CORS allows any origin).
@@ -29,16 +29,47 @@ ${qs.lang === 'fa' ? '<script>Object.defineProperty(navigator,\'language\',{get:
 <body>
   <div class="box">
     <h1><b>${qs.owner || 'owner'}</b> / ${qs.repo || 'repo'}</h1>
-    <p>Local E2E harness — the page path mimics a GitHub repo URL so the
+    <p>Local E2E harness â€” the page path mimics a GitHub repo URL so the
     extension's content-script detection activates. All extension files load
     unmodified; api.github.com is called for real.</p>
-    <p>The Repodest floating button should be attached to the left edge →</p>
+    <p>The Repodest floating button should be attached to the left edge â†’</p>
   </div>
   <script src="/lib/core.js"><\/script>
   <script src="/lib/i18n.js"><\/script>
   <script src="/lib/api.js"><\/script>
   <script src="/lib/digest.js"><\/script>
   <script src="/content/sidebar.css.js"><\/script>
+  <script>if (new URLSearchParams(location.search).get('pat') === '1') { RPApi.storeSet({ pat: 'harness' }); var _fs = RPApi.fetchScore; RPApi.fetchScore = function (o, r) { return _fs(o, r).catch(function (e) { window.__rpErrors = (window.__rpErrors || []).concat(o + '/' + r + ': ' + e.message + '/' + e.code); throw e; }); }; }</script>
+  <script src="/content/content.js"><\/script>
+</body>
+</html>`;
+
+const SEARCH_PAGE = `<!DOCTYPE html>
+<html lang="en" data-color-mode="dark" data-darktheme="dark">
+<head>
+<meta charset="UTF-8">
+<title>search Â· repositories</title>
+<style>
+  body { background: #0d1117; color: #e6edf3; font-family: -apple-system, 'Segoe UI', sans-serif; margin: 0; padding: 30px; }
+  h2 { font-size: 16px; }
+  li { border-bottom: 1px solid #30363d; }
+  a { color: #58a6ff; text-decoration: none; font-size: 15px; display: block; padding: 12px 0; }
+</style>
+</head>
+<body>
+  <h2>Search Â· repositories (mock results)</h2>
+  <ul data-testid="results-list" style="list-style:none;padding:0">
+    <li><a href="/mohsen-niksirat/Repodest">mohsen-niksirat/<b>Repodest</b></a></li>
+    <li><a href="/mohsen-niksirat/DataLens">mohsen-niksirat/<b>DataLens</b></a></li>
+    <li><a href="/mohsen-niksirat/Ravaan">mohsen-niksirat/<b>Ravaan</b></a></li>
+    <li><a href="/mohsen-niksirat/News-Channel-Bot">mohsen-niksirat/<b>News-Channel-Bot</b></a></li>
+  </ul>
+  <script src="/lib/core.js"><\/script>
+  <script src="/lib/i18n.js"><\/script>
+  <script src="/lib/api.js"><\/script>
+  <script src="/lib/digest.js"><\/script>
+  <script src="/content/sidebar.css.js"><\/script>
+  <script>if (new URLSearchParams(location.search).get('pat') === '1') { RPApi.storeSet({ pat: 'harness' }); var _fs = RPApi.fetchScore; RPApi.fetchScore = function (o, r) { return _fs(o, r).catch(function (e) { window.__rpErrors = (window.__rpErrors || []).concat(o + '/' + r + ': ' + e.message + '/' + e.code); throw e; }); }; }</script>
   <script src="/content/content.js"><\/script>
 </body>
 </html>`;
@@ -49,6 +80,11 @@ const server = http.createServer(function (req, res) {
   const u = new URL(req.url, 'http://x');
   const url = u.pathname;
   const qs = { lang: u.searchParams.get('lang'), theme: u.searchParams.get('theme'), owner: url.split('/')[1], repo: url.split('/')[2] };
+  if (url === '/search') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(SEARCH_PAGE);
+    return;
+  }
   if (url === '/' || /^\/[^/]+\/[^/]*$/.test(url) === true) {
     if (url.includes('.') === false) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

@@ -23,6 +23,8 @@ A Chrome extension (Manifest V3) that adds a sidebar to GitHub repository and **
 | 📊 **Languages** | Byte-accurate breakdown with GitHub's own color palette |
 | 🔀 **Activity** | 52-week commit heatmap, top contributors, recent commits |
 | 🧹 **Code Smells** *(v1.2)* | Scans the files you digest for TODO/FIXME, console logging, `var`, loose equality, `eval()`, bare except, hardcoded IPs — with density per 1k lines |
+| 🛡️ **Vulnerability Scan** *(v1.3)* | One click scans `package.json` / `requirements.txt` / `go.mod` / `Cargo.toml` against the free [OSV.dev](https://osv.dev) database — raw fetches, no API quota |
+| 🔎 **Search Badges** *(v1.3)* | Health-score chips right inside GitHub's repository search results (needs a token) |
 | 🌐 **Bilingual** | English & فارسی (RTL) — follows your browser language |
 | 🌗 **Theme-aware** | Matches GitHub's light/dark mode automatically |
 | ♿ **Accessible** *(v1.1)* | ARIA tabs with arrow-key navigation, dialog semantics, focus management |
@@ -60,6 +62,8 @@ No scopes needed for public repos. Stored only in your browser, sent only to `ap
 
 **Quota-friendly by design:** cached for 6h (repos) / 1h (activity & PRs), and expired entries are revalidated with `If-None-Match` — GitHub's `304` responses don't count against your rate limit.
 
+**Search badges** appear on GitHub's repository search results when a token is configured (each result costs 2 API calls, cached 6h).
+
 ## 🛠️ Architecture
 
 ```
@@ -73,9 +77,9 @@ Repodest-Extension/
 ├── content/
 │   ├── sidebar.css.js         # Shadow-DOM styles (theme-aware, RTL)
 │   └── content.js             # repo/PR page detection (Turbo-soft-nav aware) + sidebar UI
-├── background/service-worker.js  # toolbar click / Alt+R → toggle sidebar
+├── background/service-worker.js  # toolbar click / Alt+R → toggle sidebar · OSV.dev bridge
 ├── options/                   # settings page (PAT, language, theme, cache)
-├── tests/                     # 81-test suite + local E2E harness
+├── tests/                     # 99-test suite + local E2E harness
 ├── tools/build.mjs            # zero-dep packer: store zip + Firefox variant
 └── .github/workflows/         # CI (tests on every push) + Release (zips on tag)
 ```
@@ -88,8 +92,8 @@ Repodest-Extension/
 ## 🧪 Tests
 
 ```bash
-node tests/run-tests.js          # 81 assertions: health, digest × 5 formats, PR risk, smells, cache, i18n
-node tests/harness-server.js     # E2E harness → http://127.0.0.1:8123/{owner}/{repo}?lang=fa&theme=light
+node tests/run-tests.js          # 99 assertions: health, digest × 5 formats, PR risk, smells, parsers, OSV client, cache, i18n
+node tests/harness-server.js     # E2E harness → /{owner}/{repo}?lang=fa&theme=light · /search?type=repositories&pat=1
 ```
 
 CI runs the suite on every push; tagging `v1.2.3` publishes **store-ready Chrome and Firefox zips** as a GitHub Release.
@@ -97,7 +101,7 @@ CI runs the suite on every push; tagging `v1.2.3` publishes **store-ready Chrome
 ## 🔒 Privacy
 
 - No analytics, no telemetry, no accounts
-- API calls go to `api.github.com` and `raw.githubusercontent.com` only
+- API calls go to `api.github.com`, `raw.githubusercontent.com` and `api.osv.dev` (anonymous vulnerability scan) only
 - Your token and cached data stay in `chrome.storage.local`
 - Links: [Web version](https://mohsen-niksirat.github.io/repodest/) · [Telegram](https://t.me/mohsenniksirat) · [GitHub](https://github.com/mohsen-niksirat)
 

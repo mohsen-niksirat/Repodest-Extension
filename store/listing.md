@@ -12,7 +12,7 @@ Everything below is ready to copy-paste into the [Developer Dashboard](https://c
 |---|---|
 | Name (EN) | Repodest for GitHub — Health & LLM Digest |
 | Name (FA locale) | رپودست برای گیت‌هاب — سلامت و دایجست LLM |
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Category | Developer Tools |
 | Language | English (primary) + add Persian (fa) locale |
 | Website | https://mohsen-niksirat.github.io/repodest/ |
@@ -21,9 +21,9 @@ Everything below is ready to copy-paste into the [Developer Dashboard](https://c
 
 **EN:**
 ```
-Health score, PR risk reports, languages & LLM-ready digests for any GitHub repo or pull request — right on the page. No tracking.
+Health score, PR risk reports, vulnerability scan & LLM-ready digests for any GitHub repo or pull request — right on the page. No tracking.
 ```
-(126 chars ✓)
+(133 chars ✓)
 
 **FA:**
 ```
@@ -54,6 +54,12 @@ Select files — or use smart presets (🐞 Bug Hunter, 🏗️ Architecture, �
 
 📊 LANGUAGES
 Byte-accurate language breakdown using GitHub's own color palette.
+
+🛡️ VULNERABILITY SCAN
+One click scans the repo's package.json / requirements.txt / go.mod / Cargo.toml against the free OSV.dev database, with direct links to every advisory.
+
+🔎 SEARCH BADGES
+Health-score chips right inside GitHub's repository search results (enable by adding a token in Settings).
 
 🧹 CODE SMELLS
 The files you digest are scanned for TODO/FIXME markers, console logging, var usage, loose equality, eval(), bare except and hardcoded IPs — with a density score per 1k lines.
@@ -99,8 +105,11 @@ Free, open source (MIT). Part of the Repodest family:
 • تقسیم خودکار وقتی انتخاب از پنجرهٔ زمینهٔ مدل بزرگ‌تر باشد
 • 📤 دکمه‌های ارسال به LLM: با یک کلیک Claude / ChatGPT / Gemini باز می‌شود و دایجست روی کلیپ‌بورد است
 
-📊 زبان‌ها
-تفکیک دقیق بر اساس بایت با پالت رنگی خود گیت‌هاب.
+🛡️ اسکن آسیب‌پذیری
+با یک کلیک، package.json / requirements.txt / go.mod / Cargo.toml مخزن در برابر پایگاه رایگان OSV.dev اسکن می‌شود، با لینک مستقیم به هر هشدار.
+
+🔎 نشان‌های جستجو
+چیپ امتیاز سلامت در همین نتایج جستجوی مخازن گیت‌هاب (با افزودن توکن در تنظیمات فعال می‌شود).
 
 🧹 بوی بد کد
 فایل‌های انتخابی برای دایجست از نظر TODO/FIXME، console.log، var، برابری سست، eval()، except بدون نوع و IP هاردکد اسکن می‌شوند — با امتیاز تراکم در هر هزار خط.
@@ -134,7 +143,7 @@ Free, open source (MIT). Part of the Repodest family:
 | Permission: `activeTab` + `scripting` | Lets the toolbar button inject the sidebar into the current GitHub tab if it was opened before installation. |
 | Host permissions | None. |
 | Remote code | No — all code is bundled in the package. |
-| Data usage | The extension does not collect, store (server-side), or transmit any personal data or website content. API calls go directly from your browser to api.github.com / raw.githubusercontent.com. |
+| Data usage | The extension does not collect, store (server-side), or transmit any personal data or website content. API calls go directly from your browser to api.github.com / raw.githubusercontent.com / api.osv.dev (anonymous vulnerability scan). |
 | Data sold / transferred | No — never. |
 
 ## 6. Screenshot checklist / چک‌لیست اسکرین‌شات

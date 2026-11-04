@@ -49,6 +49,54 @@
   };
   const t = function (key, args) { return RPI18N.t(key, args || {}); };
 
+  /* =============== search result badges =============== */
+  function rpIsSearchPage() {
+    return location.pathname === '/search' && new URLSearchParams(location.search).get('type') === 'repositories';
+  }
+  let _searchScanTimer = null;
+  const _searchBadges = new Set(); /* repo keys already processed on this page */
+  function rpScheduleSearchScan() {
+    clearTimeout(_searchScanTimer);
+    _searchScanTimer = setTimeout(rpScanSearch, 900);
+  }
+  async function rpScanSearch() {
+    if (!rpIsSearchPage()) return;
+    if (!S.settings || !S.settings.pat) return; /* needs a PAT — full scores require the tree API */
+    const links = Array.from(document.querySelectorAll('a[href]')).filter(function (a) {
+      if (a.dataset.rpBadge) return false;
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/^\/([\w.-]+)\/([\w.-]+?)(?:$|[?#])/);
+      if (!m || RP_RESERVED.has(m[1].toLowerCase())) return false;
+      return !!a.closest('[data-testid="results-list"], ul.repo-list, .search-results, [class*="search-title"]');
+    }).slice(0, 20);
+    for (const a of links) {
+      a.dataset.rpBadge = '1';
+      const m = a.getAttribute('href').match(/^\/([\w.-]+)\/([\w.-]+?)(?:$|[?#])/);
+      if (m) rpInjectBadge(m[1], m[2], a);
+      await new Promise(function (r2) { setTimeout(r2, 250); }); /* gentle stagger */
+    }
+  }
+  async function rpInjectBadge(owner, repo, anchor) {
+    const key = (owner + '/' + repo).toLowerCase();
+    if (_searchBadges.has(key)) return;
+    _searchBadges.add(key);
+    try {
+      const d = await RPApi.fetchScore(owner, repo);
+      const paths = (d.tree && d.tree.tree || []).map(function (f) { return f.path; });
+      const score = healthCheckPaths(paths, d.meta).score;
+      const color = score >= 80 ? '#22c55e' : score >= 60 ? '#eab308' : score >= 40 ? '#f97316' : '#ef4444';
+      if (anchor.dataset.rpBadge !== '1') return; /* page changed mid-flight */
+      const host = document.createElement('span');
+      host.style.display = 'inline-block';
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML = '<style>.rp-sb{font:700 11px/1 -apple-system,Segoe UI,sans-serif;color:#fff;background:' + color +
+        ';border-radius:4px;padding:3px 6px;margin-inline-start:6px;vertical-align:middle;display:inline-block}' +
+        '.rp-sb:hover{filter:brightness(1.15)}</style>' +
+        '<span class="rp-sb" title="' + esc(RPI18N.t('badgeTitle')) + '">RP ' + score + '</span>';;
+      anchor.appendChild(host);
+    } catch (e) { /* private / rate-limited / gone — skip silently */ }
+  }
+
   /* =============== repo-page detection =============== */
   function rpParseRepo() {
     const m = location.pathname.match(/^\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:$|\/)/);
@@ -64,6 +112,7 @@
     _routeTimer = setTimeout(rpRoute, 250);
   }
   function rpRoute() {
+    if (rpIsSearchPage()) { rpScheduleSearchScan(); }
     const r = rpParseRepo();
     const host = rpEls.host;
     if (!r) {
@@ -80,12 +129,14 @@
       S.sel.clear(); S.expanded.clear(); S.limits.clear(); S.search = '';
       S.digestParts = null; S.digestStats = null; S.smellScan = null;
       S.pull = pull; S.pullData = null; S.pullError = null;
+      S.vulnScan = null; S.vulnLoading = false; S.vulnError = false;
       S.prxFocus = !!pull;
       if (S.pull) S.tab = 'prx'; else if (S.tab === 'prx') S.tab = 'health';
       rpRenderChrome();
       if (S.open) { rpRenderTabBody(); rpLoadRepo(); if (S.pull) rpLoadPull(); }
     } else if (pull !== S.pull) {
       S.pull = pull; S.pullData = null; S.pullError = null;
+      S.vulnScan = null; S.vulnLoading = false; S.vulnError = false;
       S.prxFocus = !!pull;
       if (pull) S.tab = 'prx'; else if (S.tab === 'prx') S.tab = 'health';
       rpRenderChrome();
@@ -432,7 +483,52 @@
     return descHtml +
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('checks')) + '</div><div class="rp-checks">' + checks + '</div></div>' +
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('repoFacts')) + '</div><div class="rp-facts">' + facts + '</div></div>' +
-      langsHtml + topicsHtml;
+      langsHtml + topicsHtml + rpVulnHtml();
+  }
+
+  /* ---------- security / vulnerability scan (OSV.dev) ---------- */
+  async function rpLoadVulns() {
+    if (!S.data || S.vulnLoading) return;
+    S.vulnLoading = true; S.vulnError = null;
+    rpRenderTabBody();
+    try {
+      S.vulnScan = await RPApi.scanVulns(S.owner, S.repo, S.data.branch, S.data.tree);
+      S.vulnLoading = false;
+      rpRenderTabBody();
+    } catch (e) {
+      S.vulnLoading = false;
+      S.vulnError = true;
+      rpRenderTabBody();
+    }
+  }
+
+  function rpVulnHtml() {
+    let inner;
+    if (S.vulnLoading) {
+      inner = '<div style="font-size:12px;color:var(--text2)">' + esc(t('secScanning')) + '</div>';
+    } else if (S.vulnError) {
+      inner = '<div class="rp-check bad"><span class="rp-ico">✗</span><span>' + esc(t('secFailed')) + '</span></div>' +
+        '<button class="rp-btn rp-ghost rp-sm" data-action="vulnscan" style="margin-top:8px">' + esc(t('secScan')) + '</button>';
+    } else if (!S.vulnScan) {
+      return '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('secTitle')) + '</div>' +
+        '<button class="rp-btn rp-ghost rp-sm" data-action="vulnscan">' + esc(t('secScan')) + '</button>' +
+        '<div style="font-size:11px;color:var(--text3);margin-top:6px">' + esc(t('secHint')) + '</div></div>';
+    } else if (!S.vulnScan.scanned) {
+      inner = '<div style="font-size:12px;color:var(--text2)">' + esc(t('secNoManifests')) + '</div>';
+    } else if (!S.vulnScan.vulns.length) {
+      inner = '<div class="rp-check ok"><span class="rp-ico">✓</span><span>' + esc(t('secClean', { n: S.vulnScan.scanned })) + '</span></div>';
+    } else {
+      const rows = S.vulnScan.vulns.map(function (v) {
+        const ids = v.ids.slice(0, 4).map(function (id) {
+          return '<a href="https://osv.dev/vuln/' + esc(id) + '" target="_blank" rel="noopener noreferrer" style="color:var(--red);text-decoration:none;direction:ltr">' + esc(id) + '</a>';
+        }).join(' ');
+        const more = v.ids.length > 4 ? ' <span style="color:var(--text3)">+' + (v.ids.length - 4) + '</span>' : '';
+        return '<div class="rp-commit"><div class="m" style="direction:ltr;text-align:start"><b>' + esc(v.pkg) + '</b>@' + esc(v.version) + ' <span style="color:var(--text3)">(' + esc(v.eco) + ')</span></div>' +
+          '<div class="d">' + ids + more + '</div></div>';
+      }).join('');
+      inner = '<div class="rp-check bad"><span class="rp-ico">⚠</span><span>' + esc(t('secVulns', { n: S.vulnScan.total, m: S.vulnScan.vulns.length, s: S.vulnScan.scanned })) + '</span></div>' + rows;
+    }
+    return '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('secTitle')) + '</div>' + inner + '</div>';
   }
 
   /* ---------- digest tab ---------- */
@@ -741,6 +837,7 @@
     else if (a === 'reload') { e.preventDefault(); rpLoadRepo(); }
     else if (a === 'tab') { S.tab = el.dataset.tab; rpRenderChrome(); rpRenderTabBody(); }
     else if (a === 'goal') { rpGoal(el.dataset.goal); }
+    else if (a === 'vulnscan') { rpLoadVulns(); }
     else if (a === 'selall') { S.sel = new Set(RPDigest.selectAllText(S.data.tree)); rpRenderTabBody(); }
     else if (a === 'collapse') { S.expanded.clear(); rpRefreshTree(); }
     else if (a === 'exp') {

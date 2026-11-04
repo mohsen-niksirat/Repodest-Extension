@@ -31,3 +31,25 @@ async function toggleInTab(tab) {
 }
 
 chrome.action.onClicked.addListener(toggleInTab);
+
+/* ---------- OSV.dev bridge ----------
+   The content script asks the service worker to POST to
+   api.osv.dev — a page-CSP-safe path for the vulnerability
+   scan. Responds asynchronously (return true keeps the port
+   open). */
+chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+  if (msg && msg.type === 'RP_OSV') {
+    fetch('https://api.osv.dev/v1/querybatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: msg.body
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          sendResponse({ ok: r.ok, results: r.ok ? j.results : null, code: r.ok ? null : 'HTTP_' + r.status });
+        });
+      })
+      .catch(function () { sendResponse({ ok: false, code: 'NETWORK' }); });
+    return true;
+  }
+});
