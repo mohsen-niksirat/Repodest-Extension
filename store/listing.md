@@ -12,7 +12,7 @@ Everything below is ready to copy-paste into the [Developer Dashboard](https://c
 |---|---|
 | Name (EN) | Repodest for GitHub — Health & LLM Digest |
 | Name (FA locale) | رپودست برای گیت‌هاب — سلامت و دایجست LLM |
-| Version | 1.3.0 |
+| Version | 1.4.0 |
 | Category | Developer Tools |
 | Language | English (primary) + add Persian (fa) locale |
 | Website | https://mohsen-niksirat.github.io/repodest/ |
@@ -21,13 +21,13 @@ Everything below is ready to copy-paste into the [Developer Dashboard](https://c
 
 **EN:**
 ```
-Health score, PR risk reports, vulnerability scan & LLM-ready digests for any GitHub repo or pull request — right on the page. No tracking.
+Health score, PR risk, vulnerability scan & LLM digests for any GitHub repo or PR — right on the page. No tracking.
 ```
-(133 chars ✓)
+(115 chars ✓)
 
 **FA:**
 ```
-امتیاز سلامت، زبان‌ها، فعالیت و دایجست آمادهٔ LLM برای هر ریپوی گیت‌هاب — همین‌جا در صفحه. ۱۰۰٪ سمت کلاینت، بدون ردیابی.
+امتیاز سلامت، ریسک PR، اسکن آسیب‌پذیری و دایجست آمادهٔ LLM برای هر ریپوی گیت‌هاب — همین‌جا در صفحه. بدون ردیابی.
 ```
 
 ## 3. Detailed description (EN)
@@ -38,7 +38,7 @@ Know a GitHub repo in seconds — right on the repo page.
 Repodest adds a sidebar to every GitHub repository page:
 
 🩺 HEALTH SCORE
-10 weighted checks (license, README, tests, CI, docs, freshness…) distilled into one honest number with an animated ring.
+10 weighted checks (license, README, tests, CI, docs, freshness…) distilled into one honest number with a score ring.
 
 🔀 PR X-RAY
 Open any pull request → risk score 0–10, weighted flags (auth, migrations, CI/CD, secrets…), change type, size class, test share — plus a one-click review digest for your LLM.
@@ -56,7 +56,7 @@ Select files — or use smart presets (🐞 Bug Hunter, 🏗️ Architecture, �
 Byte-accurate language breakdown using GitHub's own color palette.
 
 🛡️ VULNERABILITY SCAN
-One click scans the repo's package.json / requirements.txt / go.mod / Cargo.toml against the free OSV.dev database, with direct links to every advisory.
+One click scans the repo's package.json / requirements.txt / pyproject.toml / composer.json / go.mod / Cargo.toml against the free OSV.dev database, with direct links to every advisory.
 
 🔎 SEARCH BADGES
 Health-score chips right inside GitHub's repository search results (enable by adding a token in Settings).
@@ -66,6 +66,9 @@ The files you digest are scanned for TODO/FIXME markers, console logging, var us
 
 💾 QUOTA-FRIENDLY
 6h/1h caching plus conditional (ETag) revalidation — GitHub's 304 responses don't count against your rate limit.
+
+⚡ FAST BY DESIGN (v1.4)
+Lazy boot on repo pages only, one settings read per session, parallel GitHub requests, a pre-indexed file tree and 8-way file fetching — the sidebar no longer slows GitHub down.
 
 📈 ACTIVITY
 52-week commit heatmap, recent commits and contributor stats.
@@ -91,7 +94,7 @@ Free, open source (MIT). Part of the Repodest family:
 رپودست به هر صفحهٔ مخزن گیت‌هاب یک سایدبار اضافه می‌کند:
 
 🩺 امتیاز سلامت
-۱۰ بررسی وزن‌دار (مجوز، README، تست‌ها، CI، مستندات، تازگی…) در یک عدد صادقانه با حلقهٔ متحرک.
+۱۰ بررسی وزن‌دار (مجوز، README، تست‌ها، CI، مستندات، تازگی…) در یک عدد صادقانه با حلقهٔ امتیاز.
 
 🔀 اشعه ایکس PR
 هر پول‌ریکوئست را باز کنید → امتیاز ریسک ۰–۱۰، پرچم‌های وزن‌دار (احراز هویت، مایگریشن، CI/CD، اسرار…)، نوع تغییر، کلاس اندازه، سهم تست — به‌همراه دایجست بازبینی یک‌کلیکی برای LLM شما.
@@ -106,7 +109,7 @@ Free, open source (MIT). Part of the Repodest family:
 • 📤 دکمه‌های ارسال به LLM: با یک کلیک Claude / ChatGPT / Gemini باز می‌شود و دایجست روی کلیپ‌بورد است
 
 🛡️ اسکن آسیب‌پذیری
-با یک کلیک، package.json / requirements.txt / go.mod / Cargo.toml مخزن در برابر پایگاه رایگان OSV.dev اسکن می‌شود، با لینک مستقیم به هر هشدار.
+با یک کلیک، package.json / requirements.txt / pyproject.toml / composer.json / go.mod / Cargo.toml مخزن در برابر پایگاه رایگان OSV.dev اسکن می‌شود، با لینک مستقیم به هر هشدار.
 
 🔎 نشان‌های جستجو
 چیپ امتیاز سلامت در همین نتایج جستجوی مخازن گیت‌هاب (با افزودن توکن در تنظیمات فعال می‌شود).
@@ -116,6 +119,9 @@ Free, open source (MIT). Part of the Repodest family:
 
 💾 صرفه‌جویی در سهمیه
 کش ۶/۱ ساعته به‌همراه اعتبارسنجی شرطی (ETag) — پاسخ‌های ۳۰۴ گیت‌هاب از سهمیه شما کم نمی‌کنند.
+
+⚡ سریع به‌صورت پیش‌فرض (v1.4)
+راه‌اندازی تنبل فقط در صفحات مخزن، یک بار خواندن تنظیمات در هر نشست، درخواست‌های موازی گیت‌هاب، درخت فایل از پیش ایندکس‌شده و دریافت ۸ فایل هم‌زمان — سایدبار دیگر گیت‌هاب را کند نمی‌کند.
 
 📈 فعالیت
 نقشهٔ حرارتی ۵۲ هفتهٔ کامیت‌ها، کامیت‌های اخیر و آمار مشارکت‌کنندگان.
@@ -160,11 +166,11 @@ Tip: open `chrome://extensions` → Repodest → Details → and use Windows `Wi
 
 ## 7. Pre-submission checklist
 
-- [x] manifest.json valid MV3, version 1.0.0
+- [x] manifest.json valid MV3, version 1.4.0
 - [x] No remote code, no CDN, no eval — CSP-safe
 - [x] Icons 16/32/48/128 present
 - [x] LICENSE (MIT) bundled
-- [x] 47 automated tests pass (`extension-tests/run-tests.js`)
+- [x] 118+ automated tests pass (`tests/run-tests.js`)
 - [ ] One-time $5 developer registration fee
-- [ ] Upload `repodest-extension-1.0.0.zip`
+- [ ] Upload `repodest-extension-1.4.0.zip`
 - [ ] Review typically takes 1–3 business days (no broad permissions → fast lane)

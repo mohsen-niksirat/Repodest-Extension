@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================================
-   Local E2E harness â€” serves the extension files into a
+   Local E2E harness — serves the extension files into a
    GitHub-like page at /{owner}/{repo} so the content script's
    URL detection activates without loading the extension.
    Real api.github.com calls flow (CORS allows any origin).
@@ -29,10 +29,10 @@ ${qs.lang === 'fa' ? '<script>Object.defineProperty(navigator,\'language\',{get:
 <body>
   <div class="box">
     <h1><b>${qs.owner || 'owner'}</b> / ${qs.repo || 'repo'}</h1>
-    <p>Local E2E harness â€” the page path mimics a GitHub repo URL so the
+    <p>Local E2E harness — the page path mimics a GitHub repo URL so the
     extension's content-script detection activates. All extension files load
     unmodified; api.github.com is called for real.</p>
-    <p>The Repodest floating button should be attached to the left edge â†’</p>
+    <p>The Repodest floating button should be attached to the left edge →</p>
   </div>
   <script src="/lib/core.js"><\/script>
   <script src="/lib/i18n.js"><\/script>
@@ -48,7 +48,7 @@ const SEARCH_PAGE = `<!DOCTYPE html>
 <html lang="en" data-color-mode="dark" data-darktheme="dark">
 <head>
 <meta charset="UTF-8">
-<title>search Â· repositories</title>
+<title>search · repositories</title>
 <style>
   body { background: #0d1117; color: #e6edf3; font-family: -apple-system, 'Segoe UI', sans-serif; margin: 0; padding: 30px; }
   h2 { font-size: 16px; }
@@ -57,7 +57,7 @@ const SEARCH_PAGE = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-  <h2>Search Â· repositories (mock results)</h2>
+  <h2>Search · repositories (mock results)</h2>
   <ul data-testid="results-list" style="list-style:none;padding:0">
     <li><a href="/mohsen-niksirat/Repodest">mohsen-niksirat/<b>Repodest</b></a></li>
     <li><a href="/mohsen-niksirat/DataLens">mohsen-niksirat/<b>DataLens</b></a></li>
@@ -85,7 +85,7 @@ const server = http.createServer(function (req, res) {
     res.end(SEARCH_PAGE);
     return;
   }
-  if (url === '/' || /^\/[^/]+\/[^/]*$/.test(url) === true) {
+  if (url === '/' || /^\/[^/]+\/[^/]+(?:\/pull\/\d+)?$/.test(url) === true) {
     if (url.includes('.') === false) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(HARNESS(qs));

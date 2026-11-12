@@ -78,7 +78,7 @@ function writeZip(files) {
 }
 
 /* ---------- collect files ---------- */
-const EXCLUDE = new Set(['tests', '.github', 'store', 'tools', 'dist', '.git']);
+const EXCLUDE = new Set(['tests', '.github', 'store', 'tools', 'dist', '.git', '.gitignore']);
 function walk(dir, base) {
   let out = [];
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

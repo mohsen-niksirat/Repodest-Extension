@@ -357,7 +357,182 @@ T_PENDING.push((function () {
   });
 })());
 
-globalThis.__RP_RESULTS_PROMISE = Promise.all(T_PENDING).then(function () {
+/* ========== 16. settings cache & cache pruning ========== */
+T_PENDING.push((function () {
+  console.log('settings cache & pruning');
+  RPApi._settings = null;
+  return RPApi.getSettings().then(function (s) {
+    T_OK(RPApi._settings && RPApi._settings.preset === 'general', 'settings hydrated into memory');
+    s.preset = 'mutated';
+    return RPApi.getSettings();
+  }).then(function (s) {
+    T_OK(s.preset === 'general', 'cached settings returned as a copy');
+    return RPApi.storeSet({ 'rp_c_stale': { t: Date.now() - 20 * 864e5, v: 1 }, 'rp_c_fresh': { t: Date.now(), v: 2 } });
+  }).then(function () {
+    return RPApi.pruneCache({ maxAgeDays: 14, maxEntries: 48 });
+  }).then(function () {
+    return Promise.all([RPApi.cacheGet('stale', 1e15), RPApi.cacheGet('fresh', 1e15)]);
+  }).then(function (v) {
+    T_OK(v[0] === null, 'prune drops entries older than 14 days');
+    T_OK(v[1] === 2, 'prune keeps fresh entries');
+  });
+})());
+
+/* ========== 17. PR files pagination (mocked API) ========== */
+T_PENDING.push((function () {
+  console.log('PR files pagination');
+  function res(status, body) {
+    return {
+      ok: status >= 200 && status < 300, status: status,
+      headers: { get: function (h) { return h === 'x-ratelimit-remaining' ? '50' : h === 'x-ratelimit-limit' ? '60' : null; } },
+      json: function () { return Promise.resolve(body); },
+      text: function () { return Promise.resolve(''); }
+    };
+  }
+  var origFetch = globalThis.fetch;
+  globalThis.fetch = function (url, opts) {
+    if (url.indexOf('/pulls/7') === -1) return origFetch(url, opts);
+    if (url.indexOf('/files') === -1) return Promise.resolve(res(200, { number: 7, title: 'Big PR' }));
+    var m = url.match(/[?&]page=(\d+)/);
+    var page = m ? Number(m[1]) : 1;
+    var n = page === 3 ? 50 : 100;
+    var files = [];
+    for (var i = 0; i < n; i++) files.push({ filename: 'f' + page + '_' + i + '.js', additions: 1, deletions: 0, changes: 1 });
+    return Promise.resolve(res(200, files));
+  };
+  return RPApi.fetchPull('acme', 'widget', 7, { force: true }).then(function (d) {
+    globalThis.fetch = origFetch;
+    T_OK(d.files.length === 250, 'fetches 3 pages (got ' + d.files.length + ')');
+    T_OK(d.truncated === false, 'not truncated at 250 files');
+  }, function (e) {
+    globalThis.fetch = origFetch;
+    throw e;
+  });
+})());
+
+/* ========== 18. extra manifest parsers ========== */
+(function () {
+  console.log('extra manifest parsers');
+  var req = RPApi.parseDeps('requirements.txt', 'requests~=2.31.0\nuvicorn[standard]==0.24.0\nflask>=2.0\n');
+  T_OK(req.length === 2, 'requirements: ~= and extras parsed (got ' + req.length + ')');
+  T_OK(req.some(function (d) { return d.name === 'requests' && d.version === '2.31.0'; }), 'requirements ~= keeps compatible version');
+  T_OK(req.some(function (d) { return d.name === 'uvicorn' && d.version === '0.24.0'; }), 'requirements extras stripped');
+
+  var py = RPApi.parseDeps('pyproject.toml', '[project]\ndependencies = [\n  "requests==2.31.0",\n  "httpx~=0.25.0",\n]\n\n[tool.poetry.dependencies]\npython = "^3.11"\nserde = "1.0.0"\n');
+  T_OK(py.some(function (d) { return d.name === 'requests' && d.version === '2.31.0'; }), 'pyproject PEP 621 dependency');
+  T_OK(py.some(function (d) { return d.name === 'httpx' && d.version === '0.25.0'; }), 'pyproject ~= dependency');
+  T_OK(py.every(function (d) { return d.name !== 'python'; }), 'pyproject skips python runtime');
+
+  var comp = RPApi.parseDeps('composer.json', JSON.stringify({ require: { php: '>=8.1', 'monolog/monolog': '^3.0' } }));
+  T_OK(comp.length === 1 && comp[0].name === 'monolog/monolog', 'composer skips platform packages');
+
+  var npmDev = RPApi.parseDeps('package.json', JSON.stringify({ dependencies: { a: '1.0.0' }, devDependencies: { b: '2.0.0' } }), { includeDev: true });
+  T_OK(npmDev.length === 2, 'npm devDependencies included on request');
+
+  var goal = filterPathsByGoal(['package-lock.json', 'src/index.js', 'dist/app.js', 'node_modules/pkg/index.js', 'README.md'], 'bug');
+  T_OK(goal.indexOf('package-lock.json') === -1 && goal.indexOf('node_modules/pkg/index.js') === -1 && goal.indexOf('dist/app.js') === -1, 'goal presets exclude lockfiles and vendored dirs');
+  var goalSel = RPDigest.selectByGoal({ tree: [{ path: 'logo.png', type: 'blob', size: 1000 }, { path: 'src/index.js', type: 'blob', size: 100 }] }, 'all');
+  T_OK(goalSel.indexOf('logo.png') === -1, 'goal selection skips binary files');
+})();
+
+/* ========== 19. smell scan runs on raw text, CDATA is safe ========== */
+T_PENDING.push((function () {
+  console.log('smell scan with shrinker');
+  T_CONTENT['src/todo.js'] = '// TODO: fix this\nexport const x = 1;\n';
+  var tree = { tree: [{ path: 'src/todo.js', type: 'blob', size: 40 }] };
+  return RPDigest.generate(
+    { meta: T_META, branch: 'main', tree: tree, sel: new Set(['src/todo.js']) },
+    { preset: 'general', format: 'md', model: 'gpt5', shrink: true, sigonly: false, readme: false, tree: false },
+    null, T_fetchRaw
+  ).then(function (res) {
+    T_OK(res.smells && res.smells.total >= 1, 'TODO found even though comments are stripped');
+    T_OK(res.parts[0].indexOf('TODO') === -1, 'shrinker removed the TODO comment from the digest');
+    var xml = RPDigest.wrapFile('a.js', 'js', 'const s = "]]>";', 'xml');
+    T_OK(xml.indexOf(']]]]><![CDATA[>') !== -1, 'CDATA terminator escaped');
+  });
+})());
+
+/* ========== 20. scanVulns handles Cargo.toml, PR partial 304, Activity rate limit ========== */
+/* Run after earlier mocked-fetch tests so globalThis.fetch does not race */
+var T_SEQ = Promise.all(T_PENDING).then(function () {
+  console.log('scanVulns Cargo.toml, PR partial 304 & activity rate limit');
+  var origFetch = globalThis.fetch;
+  function mkRes(status, body, headersMap) {
+    headersMap = headersMap || {};
+    return {
+      ok: status >= 200 && status < 300,
+      status: status,
+      headers: { get: function (h) { return headersMap[h.toLowerCase()] || null; } },
+      json: function () { return Promise.resolve(body); },
+      text: function () { return Promise.resolve(typeof body === 'string' ? body : ''); }
+    };
+  }
+  var requestedUrls = [];
+  globalThis.fetch = function (url, opts) {
+    requestedUrls.push(String(url));
+    if (String(url).indexOf('raw.githubusercontent.com/rust-org/crate/main/Cargo.toml') !== -1) {
+      return Promise.resolve(mkRes(200, '[dependencies]\nserde = "1.0.190"\n'));
+    }
+    if (String(url).indexOf('api.osv.dev/v1/querybatch') !== -1) {
+      return Promise.resolve(mkRes(200, { results: [{ vulns: [{ id: 'RUSTSEC-1' }] }] }));
+    }
+    /* PR #99: page 1 returns 200 (100 files), page 2 returns 304 */
+    if (String(url).indexOf('/pulls/99/files') !== -1) {
+      var pm = String(url).match(/[?&]page=(\d+)/);
+      var page = pm ? Number(pm[1]) : 1;
+      if (page === 1) {
+        var p1 = [];
+        for (var i = 0; i < 100; i++) p1.push({ filename: 'p1_' + i + '.js', additions: 1, deletions: 0, changes: 1 });
+        return Promise.resolve(mkRes(200, p1, { etag: '"e1"' }));
+      }
+      if (page === 2) {
+        if (opts && opts.headers && opts.headers['If-None-Match'] === '"e2"') {
+          return Promise.resolve(mkRes(304, null, {}));
+        }
+        return Promise.resolve(mkRes(200, [{ filename: 'p2_0.js', additions: 1, deletions: 0, changes: 1 }], { etag: '"e2"' }));
+      }
+      return Promise.resolve(mkRes(200, [], {}));
+    }
+    if (String(url).indexOf('/pulls/99') !== -1) {
+      return Promise.resolve(mkRes(200, { number: 99, title: 'PR 99' }, {}));
+    }
+    if (String(url).indexOf('/repos/lim/repo/') !== -1) {
+      return Promise.resolve(mkRes(403, { message: 'rate limit' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-limit': '60' }));
+    }
+    return origFetch(url, opts);
+  };
+
+  return RPApi.scanVulns('rust-org', 'crate', 'main', { tree: [{ path: 'Cargo.toml', type: 'blob', size: 120 }] }).then(function (scan) {
+    T_OK(scan.scanned === 1 && scan.deps[0].name === 'serde' && scan.deps[0].eco === 'crates.io', 'scanVulns finds and scans Cargo.toml');
+    T_OK(scan.vulns.length === 1 && scan.vulns[0].ids[0] === 'RUSTSEC-1', 'scanVulns flags Cargo.toml vulnerability');
+    T_OK(requestedUrls.some(function (u) { return u.indexOf('/Cargo.toml') !== -1; }), 'scanVulns preserves Cargo.toml casing in raw URL');
+
+    /* Seed expired PR cache + etag for page 2, then revalidate with page 1 = 200, page 2 = 304 */
+    var oldFiles = [];
+    for (var i = 0; i < 100; i++) oldFiles.push({ filename: 'old_p1_' + i + '.js', additions: 1, deletions: 0, changes: 1 });
+    oldFiles.push({ filename: 'old_p2_kept.js', additions: 2, deletions: 0, changes: 2 });
+    return RPApi.storeSet({
+      'rp_c_pull:acme/widget#99': { t: 0, v: { pr: { number: 99 }, files: oldFiles, truncated: false } },
+      'rp_e_pull:acme/widget#99!files2': '"e2"'
+    }).then(function () {
+      return RPApi.fetchPull('acme', 'widget', 99);
+    });
+  }).then(function (d) {
+    T_OK(d.files.length === 101 && d.files.some(function (f) { return f.filename === 'old_p2_kept.js'; }), 'fetchPull preserves page 2 cached files on partial 304');
+    return RPApi.fetchActivity('lim', 'repo', { force: true }).then(function () {
+      T_OK(false, 'fetchActivity should reject on 403 rate limit');
+    }, function (err) {
+      T_OK(err && err.code === 'RATE_LIMIT', 'fetchActivity propagates RATE_LIMIT instead of EMPTY');
+    });
+  }).then(function () {
+    globalThis.fetch = origFetch;
+  }, function (e) {
+    globalThis.fetch = origFetch;
+    throw e;
+  });
+});
+
+globalThis.__RP_RESULTS_PROMISE = T_SEQ.then(function () {
   return { passed: T_PASSED, failed: T_FAILED };
 });
 globalThis.__RP_RESULTS = { passed: T_PASSED, failed: T_FAILED };

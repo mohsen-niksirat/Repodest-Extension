@@ -103,7 +103,9 @@ function fmtNum(n) { n = Number(n) || 0; return n >= 1000 ? (n / 1000).toFixed(0
   document.getElementById('testPat').addEventListener('click', testPat);
   document.getElementById('lang').addEventListener('change', async function (e) {
     await RPApi.setSettings({ lang: e.target.value });
-    OPT_LANG = (e.target.value === 'fa' || e.target.value === 'en') ? e.target.value : OPT_LANG;
+    OPT_LANG = (e.target.value === 'fa' || e.target.value === 'en')
+      ? e.target.value
+      : ((navigator.language || 'en').toLowerCase().startsWith('fa') ? 'fa' : 'en');
     applyI18n();
   });
   document.getElementById('theme').addEventListener('change', function (e) {

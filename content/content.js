@@ -16,7 +16,8 @@
     'trending', 'collections', 'events', 'about', 'pricing', 'features', 'enterprise', 'security',
     'customer-stories', 'readme', 'site-policy', 'site-map', 'sponsors', 'gist', 'pulls', 'issues',
     'search', 'codespaces', 'contact', 'join', 'fightcoronavirus', 'company', 'careers', 'press',
-    'atom', 'git-guide', 'open-source', 'personal', 'organizations-plan']);
+    'atom', 'git-guide', 'open-source', 'personal', 'organizations-plan',
+    'stars', 'advisories', 'copilot', 'solutions', 'resources', 'discussions', 'account', 'watching', 'edu', 'why-github']);
 
   const RP_ICONS = {
     logo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"/></svg>',
@@ -42,10 +43,12 @@
     data: null, loading: false, error: null,
     activity: null, activityLoading: false, activityError: null,
     sel: new Set(), treeRoot: null, expanded: new Set(), limits: new Map(), search: '',
-    digestParts: null, partIdx: 0, digestStats: null,
+    digestParts: null, partIdx: 0, digestStats: null, digestStale: false,
     tab: 'health', open: false,
     pull: null, pullData: null, pullLoading: false, pullError: null, prxFocus: false,
-    settings: null, rateShown: false
+    settings: null, rateShown: false,
+    smellScan: null, vulnScan: null, vulnLoading: false, vulnError: null,
+    fileMap: null, treeMap: null, selectableCount: 0, generating: false, health: null
   };
   const t = function (key, args) { return RPI18N.t(key, args || {}); };
 
@@ -54,13 +57,23 @@
     return location.pathname === '/search' && new URLSearchParams(location.search).get('type') === 'repositories';
   }
   let _searchScanTimer = null;
-  const _searchBadges = new Set(); /* repo keys already processed on this page */
+  let _lastSearchUrl = '';
+  const _searchBadges = new Set(); /* repo keys already processed on current search view */
+  const _badgeQueue = [];
+  let _badgeActive = 0;
+  const _BADGE_CONCURRENCY = 3;
   function rpScheduleSearchScan() {
     clearTimeout(_searchScanTimer);
     _searchScanTimer = setTimeout(rpScanSearch, 900);
   }
-  async function rpScanSearch() {
+  function rpScanSearch() {
     if (!rpIsSearchPage()) return;
+    const searchUrl = location.pathname + location.search;
+    if (searchUrl !== _lastSearchUrl) {
+      _lastSearchUrl = searchUrl;
+      _searchBadges.clear();
+      _badgeQueue.length = 0;
+    }
     if (!S.settings || !S.settings.pat) return; /* needs a PAT — full scores require the tree API */
     const links = Array.from(document.querySelectorAll('a[href]')).filter(function (a) {
       if (a.dataset.rpBadge) return false;
@@ -68,24 +81,39 @@
       const m = href.match(/^\/([\w.-]+)\/([\w.-]+?)(?:$|[?#])/);
       if (!m || RP_RESERVED.has(m[1].toLowerCase())) return false;
       return !!a.closest('[data-testid="results-list"], ul.repo-list, .search-results, [class*="search-title"]');
-    }).slice(0, 20);
-    for (const a of links) {
-      a.dataset.rpBadge = '1';
-      const m = a.getAttribute('href').match(/^\/([\w.-]+)\/([\w.-]+?)(?:$|[?#])/);
-      if (m) rpInjectBadge(m[1], m[2], a);
-      await new Promise(function (r2) { setTimeout(r2, 250); }); /* gentle stagger */
+    }).slice(0, 12);
+    links.forEach(function (a) {
+      const m = (a.getAttribute('href') || '').match(/^\/([\w.-]+)\/([\w.-]+?)(?:$|[?#])/);
+      if (m) {
+        a.dataset.rpBadge = 'queued';
+        _badgeQueue.push({ owner: m[1], repo: m[2], anchor: a });
+      }
+    });
+    rpPumpBadges();
+  }
+  function rpPumpBadges() {
+    while (_badgeActive < _BADGE_CONCURRENCY && _badgeQueue.length) {
+      const job = _badgeQueue.shift();
+      _badgeActive++;
+      rpInjectBadge(job.owner, job.repo, job.anchor).then(function () {
+        _badgeActive--; rpPumpBadges();
+      }, function () {
+        _badgeActive--; rpPumpBadges();
+      });
     }
   }
   async function rpInjectBadge(owner, repo, anchor) {
     const key = (owner + '/' + repo).toLowerCase();
     if (_searchBadges.has(key)) return;
     _searchBadges.add(key);
+    const token = 'p' + Math.random().toString(36).slice(2);
+    anchor.dataset.rpBadge = token;
     try {
       const d = await RPApi.fetchScore(owner, repo);
       const paths = (d.tree && d.tree.tree || []).map(function (f) { return f.path; });
       const score = healthCheckPaths(paths, d.meta).score;
       const color = score >= 80 ? '#22c55e' : score >= 60 ? '#eab308' : score >= 40 ? '#f97316' : '#ef4444';
-      if (anchor.dataset.rpBadge !== '1') return; /* page changed mid-flight */
+      if (anchor.dataset.rpBadge !== token || !anchor.isConnected) return; /* page changed mid-flight */
       const host = document.createElement('span');
       host.style.display = 'inline-block';
       const shadow = host.attachShadow({ mode: 'open' });
@@ -109,7 +137,7 @@
   let _routeTimer = null;
   function rpRouteDebounced() {
     clearTimeout(_routeTimer);
-    _routeTimer = setTimeout(rpRoute, 250);
+    _routeTimer = setTimeout(function () { rpRouteSafe().catch(function () {}); }, 250);
   }
   function rpRoute() {
     if (rpIsSearchPage()) { rpScheduleSearchScan(); }
@@ -117,6 +145,8 @@
     const host = rpEls.host;
     if (!r) {
       if (host) host.style.display = 'none';
+      _repoReq++; _pullReq++; _actReq++; _vulnReq++;
+      S.loading = false; S.pullLoading = false; S.activityLoading = false; S.vulnLoading = false;
       S.key = null;
       return;
     }
@@ -124,19 +154,22 @@
     const key = r.owner + '/' + r.repo;
     const pull = r.pull || null;
     if (key.toLowerCase() !== (S.key || '').toLowerCase()) {
+      _repoReq++; _pullReq++; _actReq++; _vulnReq++;
       S.owner = r.owner; S.repo = r.repo; S.key = key;
-      S.data = null; S.error = null; S.activity = null; S.activityError = null;
+      S.data = null; S.loading = false; S.error = null;
+      S.activity = null; S.activityLoading = false; S.activityError = null;
       S.sel.clear(); S.expanded.clear(); S.limits.clear(); S.search = '';
-      S.digestParts = null; S.digestStats = null; S.smellScan = null;
-      S.pull = pull; S.pullData = null; S.pullError = null;
-      S.vulnScan = null; S.vulnLoading = false; S.vulnError = false;
+      S.digestParts = null; S.digestStats = null; S.digestStale = false; S.smellScan = null;
+      S.health = null; S.fileMap = null; S.treeMap = null; S.selectableCount = 0;
+      S.pull = pull; S.pullData = null; S.pullLoading = false; S.pullError = null;
+      S.vulnScan = null; S.vulnLoading = false; S.vulnError = null;
       S.prxFocus = !!pull;
       if (S.pull) S.tab = 'prx'; else if (S.tab === 'prx') S.tab = 'health';
       rpRenderChrome();
       if (S.open) { rpRenderTabBody(); rpLoadRepo(); if (S.pull) rpLoadPull(); }
     } else if (pull !== S.pull) {
-      S.pull = pull; S.pullData = null; S.pullError = null;
-      S.vulnScan = null; S.vulnLoading = false; S.vulnError = false;
+      _pullReq++;
+      S.pull = pull; S.pullData = null; S.pullLoading = false; S.pullError = null;
       S.prxFocus = !!pull;
       if (pull) S.tab = 'prx'; else if (S.tab === 'prx') S.tab = 'health';
       rpRenderChrome();
@@ -161,33 +194,48 @@
   }
 
   /* =============== data loading =============== */
+  let _repoReq = 0;
   async function rpLoadRepo(force) {
     if (!S.key) return;
+    const req = ++_repoReq;
     S.loading = true; S.error = null;
     rpRender();
     try {
-      S.data = await RPApi.fetchRepo(S.owner, S.repo, { force: force });
+      const data = await RPApi.fetchRepo(S.owner, S.repo, { force: force });
+      if (req !== _repoReq) return; /* a newer navigation won */
+      S.data = data;
+      S.health = null;
       S.treeRoot = rpBuildTree(S.data.tree);
+      S.treeMap = rpBuildTreeMap(S.treeRoot, new Map());
+      S.fileMap = new Map(((S.data.tree && S.data.tree.tree) || []).map(function (f) { return [f.path, f]; }));
+      S.selectableCount = ((S.data.tree && S.data.tree.tree) || []).reduce(function (n, f) { return n + (RPDigest.isSelectable(f) ? 1 : 0); }, 0);
+      rpRecomputeSelCounts();
       S.loading = false;
       rpRender();
     } catch (e) {
+      if (req !== _repoReq) return;
       S.loading = false;
       S.error = (e && e.code) ? e.code : 'UNKNOWN';
       rpRender();
     }
   }
 
+  let _pullReq = 0;
   async function rpLoadPull(force) {
-    if (!S.pull || S.pullLoading) return;
+    if (!S.pull || (S.pullLoading && !force)) return;
+    const req = ++_pullReq;
     S.pullLoading = true; S.pullError = null;
     rpRenderScorebar();
     rpRenderTabBody();
     try {
-      S.pullData = await RPApi.fetchPull(S.owner, S.repo, S.pull, { force: force });
+      const data = await RPApi.fetchPull(S.owner, S.repo, S.pull, { force: force });
+      if (req !== _pullReq) return;
+      S.pullData = data;
       S.pullLoading = false;
       rpRenderScorebar();
       rpRenderTabBody();
     } catch (e) {
+      if (req !== _pullReq) return;
       S.pullLoading = false;
       S.pullError = (e && e.code) || 'UNKNOWN';
       rpRenderScorebar();
@@ -195,15 +243,20 @@
     }
   }
 
+  let _actReq = 0;
   async function rpLoadActivity(force) {
-    if (!S.key || S.activityLoading) return;
+    if (!S.key || (S.activityLoading && !force)) return;
+    const req = ++_actReq;
     S.activityLoading = true; S.activityError = null;
     rpRenderTabBody();
     try {
-      S.activity = await RPApi.fetchActivity(S.owner, S.repo, { force: force });
+      const data = await RPApi.fetchActivity(S.owner, S.repo, { force: force });
+      if (req !== _actReq) return;
+      S.activity = data;
       S.activityLoading = false;
       rpRenderTabBody();
     } catch (e) {
+      if (req !== _actReq) return;
       S.activityLoading = false;
       S.activityError = (e && e.code) || 'UNKNOWN';
       rpRenderTabBody();
@@ -227,13 +280,33 @@
       }
       node.files.push(f);
     }
+    rpIndexTree(root, null);
     return root;
   }
   function rpDirFiles(node, out) {
+    if (!out && node._all) return node._all;
     out = out || [];
     for (const f of node.files) out.push(f);
     node.dirs.forEach(function (d) { rpDirFiles(d, out); });
     return out;
+  }
+  /* Pre-compute every directory's file list once, so rendering the tree
+     is O(visible nodes) instead of walking whole subtrees per folder. */
+  function rpIndexTree(node, parent) {
+    node._parent = parent || null;
+    const all = [];
+    node.dirs.forEach(function (d) { all.push.apply(all, rpIndexTree(d, node)); });
+    all.push.apply(all, node.files);
+    node._all = all;
+    node._sel = all.filter(function (f) { return RPDigest.isSelectable(f); });
+    node._selCount = 0;
+    node.files.forEach(function (f) { f._dir = node; });
+    return all;
+  }
+  function rpBuildTreeMap(node, map) {
+    map.set(node.path, node);
+    node.dirs.forEach(function (d) { rpBuildTreeMap(d, map); });
+    return map;
   }
   function rpNodeIcon(node) { return node.dirs ? '📁' : '📄'; }
 
@@ -251,8 +324,8 @@
     root.className = 'rp-root';
     root.setAttribute('data-theme', 'dark');
     root.innerHTML =
-      '<button class="rp-fab" data-action="toggle" title="' + esc(t('open')) + '" aria-label="' + esc(t('open')) + '">' + RP_ICONS.logo + '</button>' +
-      '<aside class="rp-panel" id="rpPanel" role="dialog" aria-label="' + esc(t('extName')) + '" tabindex="-1">' +
+      '<button class="rp-fab" data-action="toggle" aria-expanded="false" title="' + esc(t('open')) + '" aria-label="' + esc(t('open')) + '">' + RP_ICONS.logo + '</button>' +
+      '<aside class="rp-panel" id="rpPanel" role="dialog" aria-hidden="true" aria-label="' + esc(t('extName')) + '" tabindex="-1">' +
       '  <header class="rp-head">' +
       '    <div class="rp-brand"><span class="rp-logo">' + RP_ICONS.logo + '</span><span>Repodest</span><span class="rp-reponame" id="rpRepoName"></span></div>' +
       '    <button class="rp-iconbtn" data-action="refresh" title="' + esc(t('refresh')) + '" aria-label="' + esc(t('refresh')) + '">' + RP_ICONS.refresh + '</button>' +
@@ -288,6 +361,7 @@
       rateVal: root.querySelector('.rp-rateval'),
       toast: root.querySelector('#rpToast')
     };
+    rpEls.panel.inert = true; /* closed panel stays out of the tab order */
 
     shadow.addEventListener('click', rpClick);
     shadow.addEventListener('change', rpChange);
@@ -299,8 +373,13 @@
     RPApi.onRate(rpUpdateRate);
   }
 
-  /* arrow-key navigation between tabs (RTL-aware) */
+  /* arrow-key navigation between tabs (RTL-aware) + Enter/Space on folder carets */
   function rpTabKeys(e) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.dataset && e.target.dataset.action === 'exp') {
+      e.preventDefault();
+      e.target.click();
+      return;
+    }
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     const tab = e.target.closest ? e.target.closest('.rp-tab') : null;
     if (!tab) return;
@@ -346,9 +425,11 @@
   }
 
   function rpHealth() {
+    if (S.health) return S.health;
     if (!S.data || !S.data.meta) return null;
     const paths = (S.data.tree && S.data.tree.tree || []).map(function (f) { return f.path; });
-    return healthCheckPaths(paths, S.data.meta);
+    S.health = healthCheckPaths(paths, S.data.meta);
+    return S.health;
   }
 
   function rpRenderScorebar() {
@@ -380,9 +461,23 @@
       '</div>';
   }
 
+  function rpAnalyzePull() {
+    const d = S.pullData;
+    if (!d) return null;
+    const an = analyzePR(d.pr, d.files);
+    an.truncated = !!d.truncated; /* our 300-file cap, not core's 100 */
+    if (an.truncated && d.pr) {
+      /* totals for the whole PR, not just the 300 fetched files */
+      if (typeof d.pr.additions === 'number') an.totals.add = d.pr.additions;
+      if (typeof d.pr.deletions === 'number') an.totals.del = d.pr.deletions;
+      an.totals.changes = an.totals.add + an.totals.del;
+    }
+    return an;
+  }
+
   function rpRenderPRScorebar() {
     if (S.pullLoading || !S.pullData) { rpEls.scorebar.innerHTML = ''; rpEls.scorebar.style.display = 'none'; return; }
-    const an = analyzePR(S.pullData.pr, S.pullData.files);
+    const an = rpAnalyzePull();
     const color = an.verdict === 'low' ? 'var(--green)' : an.verdict === 'medium' ? 'var(--yellow)' : 'var(--red)';
     const verdict = an.verdict === 'low' ? t('prLow') : an.verdict === 'medium' ? t('prMedium') : t('prHigh');
     const C = 163.36, off = C - (C * an.riskScore / 10);
@@ -416,6 +511,18 @@
 
   function rpRenderTabBody() {
     if (!rpEls.body) return;
+    /* PR X-Ray is independent of the repo bundle: show it even while
+       repo metadata is loading or if that request failed. */
+    if (S.tab === 'prx') {
+      if (S.pullError) { rpEls.body.innerHTML = rpErrorHtml(S.pullError, 'reloadpr'); return; }
+      if (!S.pullData) {
+        if (!S.pullLoading && S.pull) rpLoadPull();
+        rpEls.body.innerHTML = '<div class="rp-spin"></div><div class="rp-empty">' + esc(t('loading')) + '</div>';
+        return;
+      }
+      rpEls.body.innerHTML = rpPRHtml();
+      return;
+    }
     if (S.loading) {
       rpEls.body.innerHTML = '<div class="rp-spin"></div><div class="rp-empty">' + esc(t('loading')) + '</div>';
       return;
@@ -424,14 +531,10 @@
     if (!S.data) { rpEls.body.innerHTML = '<div class="rp-empty">' + esc(t('tagline')) + '</div>'; return; }
     if (S.tab === 'health') rpEls.body.innerHTML = rpHealthHtml();
     else if (S.tab === 'digest') rpEls.body.innerHTML = rpDigestHtml();
-    else if (S.tab === 'prx') {
-      if (!S.pullData && !S.pullError && !S.pullLoading) { rpLoadPull(); return; }
-      rpEls.body.innerHTML = S.pullError ? rpErrorHtml(S.pullError) : (S.pullData ? rpPRHtml() : '<div class="rp-spin"></div><div class="rp-empty">' + esc(t('loading')) + '</div>');
-    }
     else if (S.tab === 'activity') { rpEls.body.innerHTML = rpActivityHtml(); if (!S.activity && !S.activityError) rpLoadActivity(); }
   }
 
-  function rpErrorHtml(code) {
+  function rpErrorHtml(code, retryAction) {
     let msg, extra = '';
     if (code === 'NOT_FOUND') msg = t('notFound');
     else if (code === 'RATE_LIMIT') {
@@ -439,7 +542,7 @@
       extra = '<button class="rp-btn rp-ghost rp-sm" data-action="settings">' + esc(t('openSettings')) + '</button> ';
     } else msg = t('networkError');
     return '<div class="rp-err"><b>' + esc(t('error')) + '</b>' + esc(msg) + '<div>' + extra +
-      '<button class="rp-btn rp-sm" data-action="reload">' + esc(t('retry')) + '</button></div></div>';
+      '<button class="rp-btn rp-sm" data-action="' + esc(retryAction || 'reload') + '">' + esc(t('retry')) + '</button></div></div>';
   }
 
   /* ---------- health tab ---------- */
@@ -480,22 +583,31 @@
     let descHtml = '';
     if (m.description) descHtml = '<div class="rp-sec"><div style="font-size:12.5px;color:var(--text2)">' + esc(m.description) + '</div></div>';
 
-    return descHtml +
+    const treeNote = (S.data.tree && S.data.tree.truncated)
+      ? '<div class="rp-sec"><div class="rp-check bad"><span class="rp-ico">⚠</span><span>' + esc(t('treeTruncatedShort')) + '</span></div></div>'
+      : '';
+
+    return descHtml + treeNote +
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('checks')) + '</div><div class="rp-checks">' + checks + '</div></div>' +
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('repoFacts')) + '</div><div class="rp-facts">' + facts + '</div></div>' +
       langsHtml + topicsHtml + rpVulnHtml();
   }
 
   /* ---------- security / vulnerability scan (OSV.dev) ---------- */
+  let _vulnReq = 0;
   async function rpLoadVulns() {
     if (!S.data || S.vulnLoading) return;
+    const req = ++_vulnReq;
     S.vulnLoading = true; S.vulnError = null;
     rpRenderTabBody();
     try {
-      S.vulnScan = await RPApi.scanVulns(S.owner, S.repo, S.data.branch, S.data.tree);
+      const scan = await RPApi.scanVulns(S.owner, S.repo, S.data.branch, S.data.tree);
+      if (req !== _vulnReq) return;
+      S.vulnScan = scan;
       S.vulnLoading = false;
       rpRenderTabBody();
     } catch (e) {
+      if (req !== _vulnReq) return;
       S.vulnLoading = false;
       S.vulnError = true;
       rpRenderTabBody();
@@ -632,8 +744,8 @@
       if (it.dirs) {
         const isOpen = S.expanded.has(it.path);
         out.push('<div class="rp-node rp-dir" style="padding-inline-start:' + (depth * 14 + 4) + 'px">' +
-          '<span class="rp-caret" data-action="exp" data-path="' + esc(it.path) + '">' + (isOpen ? '▼' : '▶') + '</span>' +
-          '<input type="checkbox" class="rp-ck" data-dirpath="' + esc(it.path) + '"' + (rpDirAllSel(it) ? ' checked' : '') + '>' +
+          '<span class="rp-caret" role="button" tabindex="0" aria-expanded="' + isOpen + '" aria-label="' + esc(it.name) + '" data-action="exp" data-path="' + esc(it.path) + '">' + (isOpen ? '▼' : '▶') + '</span>' +
+          '<input type="checkbox" class="rp-ck" data-dirpath="' + esc(it.path) + '"' + (rpDirAllSel(it) ? ' checked' : '') + ' aria-label="' + esc(t('selectFolder', { path: it.path || '.' })) + '">' +
           '<span class="rp-name">' + esc(it.name) + '</span></div>');
         if (isOpen) rpRenderDir(it, depth + 1, out);
       } else {
@@ -646,24 +758,48 @@
   function rpFileNodeHtml(f, depth) {
     const selectable = RPDigest.isSelectable(f);
     return '<div class="rp-node" style="padding-inline-start:' + (depth * 14 + 22) + 'px">' +
-      '<input type="checkbox" class="rp-ck" data-path="' + esc(f.path) + '"' + (S.sel.has(f.path) ? ' checked' : '') + (selectable ? '' : ' disabled') + '>' +
+      '<input type="checkbox" class="rp-ck" data-path="' + esc(f.path) + '"' + (S.sel.has(f.path) ? ' checked' : '') + (selectable ? '' : ' disabled') + ' aria-label="' + esc(t('selectFile', { path: f.path })) + '">' +
       '<span class="rp-name">' + esc(f.path.split('/').pop()) + '</span>' +
       '<span class="rp-sz">' + fmtSize(f.size || 0) + '</span></div>';
   }
 
   function rpDirAllSel(node) {
-    const files = rpDirFiles(node);
-    return files.length > 0 && files.every(function (f) { return S.sel.has(f.path); });
+    const sel = node._sel || [];
+    return sel.length > 0 && (node._selCount || 0) >= sel.length;
+  }
+  /* Keep per-folder selected counts in sync while walking up the tree:
+     folder checkboxes become O(1) instead of O(subtree) on every tick. */
+  function rpBumpDirCounts(file, delta) {
+    let dir = file && file._dir;
+    while (dir) {
+      dir._selCount = Math.max(0, (dir._selCount || 0) + delta);
+      dir = dir._parent;
+    }
+  }
+  function rpSetFileSel(path, on) {
+    const has = S.sel.has(path);
+    if (on === has) return;
+    if (on) S.sel.add(path); else S.sel.delete(path);
+    const f = S.fileMap && S.fileMap.get(path);
+    if (f) rpBumpDirCounts(f, on ? 1 : -1);
+  }
+  function rpRecomputeSelCounts() {
+    if (!S.treeMap) return;
+    S.treeMap.forEach(function (node) {
+      let n = 0;
+      const sel = node._sel || [];
+      for (let i = 0; i < sel.length; i++) if (S.sel.has(sel[i].path)) n++;
+      node._selCount = n;
+    });
   }
 
   function rpSelMetaHtml() {
-    let bytes = 0, selectable = 0;
-    const files = (S.data.tree && S.data.tree.tree) || [];
-    const fmap = {};
-    files.forEach(function (f) { fmap[f.path] = f; if (RPDigest.isSelectable(f)) selectable++; });
-    S.sel.forEach(function (p) { const f = fmap[p]; if (f) bytes += f.size || 0; });
+    let bytes = 0;
+    const selectable = S.selectableCount || 0;
+    const fmap = S.fileMap;
+    S.sel.forEach(function (p) { const f = fmap && fmap.get(p); if (f) bytes += f.size || 0; });
     const model = RPDigest.modelById(S.settings.model);
-    const isPrompt = !!(S.digestParts && S.digestParts.length);
+    const isPrompt = !!(S.digestParts && S.digestParts.length && !S.digestStale);
     const textLen = isPrompt ? S.digestParts[S.partIdx].length : bytes;
     const toks = RPDigest.estimateTokens(textLen, S.settings.model);
     const pct = Math.min(999, Math.round(toks / model.ctx * 100));
@@ -704,7 +840,7 @@
   /* ---------- PR X-Ray tab ---------- */
   function rpPRHtml() {
     const d = S.pullData, pr = d.pr;
-    const an = analyzePR(pr, d.files);
+    const an = rpAnalyzePull();
     const state = pr.merged_at ? 'merged' : (pr.draft ? 'draft' : (pr.state || 'open'));
     const stateColor = state === 'merged' ? 'var(--accent)' : state === 'draft' ? 'var(--text3)' : state === 'closed' ? 'var(--red)' : 'var(--green)';
 
@@ -712,7 +848,7 @@
     const bar = '<div class="rp-langbar" style="height:8px"><i style="width:' + addPct + '%;background:var(--green)" title="+' + fmt(an.totals.add) + '"></i><i style="width:' + (100 - addPct) + '%;background:var(--red)" title="\u2212' + fmt(an.totals.del) + '"></i></div>';
 
     const facts = [
-      { k: t('prChangedFiles'), v: String(d.files.length) },
+      { k: t('prChangedFiles'), v: String((an.truncated && pr.changed_files) || d.files.length) },
       { k: t('prAdditions'), v: '+' + fmt(an.totals.add) },
       { k: t('prDeletions'), v: '\u2212' + fmt(an.totals.del) },
       { k: t('prType'), v: esc(an.changeType) },
@@ -748,7 +884,7 @@
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('repoFacts')) + '</div><div class="rp-facts">' + facts + '</div></div>' +
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('prRisk')) + ' · ' + an.riskScore + '/10</div><div class="rp-checks">' + risks + '</div></div>' +
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('prTopFiles')) + '</div>' + filesHtml + moreFiles + '</div>' +
-      (d.truncated ? '<div class="rp-sec" style="font-size:11px;color:var(--text3)">⚠ ' + esc(t('prTruncated')) + '</div>' : '') +
+      (an.truncated ? '<div class="rp-sec" style="font-size:11px;color:var(--text3)">⚠ ' + esc(t('prTruncated')) + '</div>' : '') +
       '<button class="rp-btn" data-action="prdigest" style="width:100%">' + esc(t('prCopyReview')) + '</button>';
   }
 
@@ -774,7 +910,11 @@
   /* ---------- activity tab ---------- */
   function rpActivityHtml() {
     if (S.activityLoading) return '<div class="rp-spin"></div><div class="rp-empty">' + esc(t('loading')) + '</div>';
-    if (S.activityError === 'RATE_LIMIT') return rpErrorHtml('RATE_LIMIT');
+    if (S.activityError) {
+      return '<div class="rp-err"><b>' + esc(t('error')) + '</b>' +
+        esc(S.activityError === 'RATE_LIMIT' ? t('rateLimited') : S.activityError === 'EMPTY' ? t('activityUnavailable') : t('networkError')) +
+        '<div><button class="rp-btn rp-sm" data-action="reloadact">' + esc(t('retry')) + '</button></div></div>';
+    }
     if (!S.activity) return '<div class="rp-empty">' + esc(t('loading')) + '</div>';
     const a = S.activity;
 
@@ -802,7 +942,7 @@
       contribs = '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('topContributors')) + '</div>' +
         a.contributors.map(function (c) {
           return '<div class="rp-contrib">' +
-            (c.avatar_url ? '<img src="' + esc(c.avatar_url) + '&s=44" alt="" loading="lazy">' : '<img src="" alt="">') +
+            (c.avatar_url ? '<img src="' + esc(c.avatar_url) + (c.avatar_url.indexOf('?') !== -1 ? '&' : '?') + 's=44" alt="" loading="lazy">' : '<img src="" alt="">') +
             '<span class="nm">' + esc(c.login || '') + '</span><span class="n">' + fmt(c.contributions) + ' ' + esc(t('commits')) + '</span></div>';
         }).join('') + '</div>';
     }
@@ -835,10 +975,12 @@
     }
     else if (a === 'refresh') { e.preventDefault(); rpLoadRepo(true); }
     else if (a === 'reload') { e.preventDefault(); rpLoadRepo(); }
+    else if (a === 'reloadpr') { e.preventDefault(); rpLoadPull(true); }
+    else if (a === 'reloadact') { e.preventDefault(); rpLoadActivity(true); }
     else if (a === 'tab') { S.tab = el.dataset.tab; rpRenderChrome(); rpRenderTabBody(); }
     else if (a === 'goal') { rpGoal(el.dataset.goal); }
     else if (a === 'vulnscan') { rpLoadVulns(); }
-    else if (a === 'selall') { S.sel = new Set(RPDigest.selectAllText(S.data.tree)); rpRenderTabBody(); }
+    else if (a === 'selall') { S.sel = new Set(RPDigest.selectAllText(S.data.tree)); S.digestStale = true; rpRecomputeSelCounts(); rpRenderTabBody(); }
     else if (a === 'collapse') { S.expanded.clear(); rpRefreshTree(); }
     else if (a === 'exp') {
       const p = el.dataset.path;
@@ -860,7 +1002,7 @@
     else if (a === 'prdigest') {
       const d = S.pullData;
       if (!d) return;
-      const an = analyzePR(d.pr, d.files);
+      const an = rpAnalyzePull();
       rpCopyText(buildPRDigest(d.pr, d.files, an, {}), function () { rpToast(t('prReviewReady')); });
     }
     else if (a === 'download') { rpDownload(); }
@@ -876,6 +1018,7 @@
       const patch = {};
       patch[el.id === 'rpPreset' ? 'preset' : el.id === 'rpFormat' ? 'format' : 'model'] = el.value;
       rpSaveSettings(patch);
+      if (el.id !== 'rpModel') S.digestStale = true;
       if (el.id === 'rpPreset') rpRenderTabBody(); /* show/hide custom-task textarea */
       else rpRefreshSelMeta();
       return;
@@ -885,18 +1028,21 @@
       const patch = {};
       patch[map[el.id]] = el.checked;
       rpSaveSettings(patch);
+      S.digestStale = true;
       rpRefreshSelMeta();
       return;
     }
     if (el.dataset.path) {
-      if (el.checked) S.sel.add(el.dataset.path); else S.sel.delete(el.dataset.path);
+      rpSetFileSel(el.dataset.path, el.checked);
+      S.digestStale = true;
       rpRefreshSelMeta();
     } else if (el.dataset.dirpath) {
       const node = rpFindDir(S.treeRoot, el.dataset.dirpath);
       if (node) {
-        const files = rpDirFiles(node).filter(function (f) { return RPDigest.isSelectable(f); });
+        const files = node._sel || [];
         const all = rpDirAllSel(node);
-        files.forEach(function (f) { if (all) S.sel.delete(f.path); else S.sel.add(f.path); });
+        files.forEach(function (f) { rpSetFileSel(f.path, !all); });
+        S.digestStale = true;
         rpRefreshTree();
       }
     }
@@ -922,10 +1068,13 @@
     if (goal === 'clear') S.sel.clear();
     else if (goal === 'all') S.sel = new Set(RPDigest.selectAllText(S.data.tree));
     else S.sel = new Set(RPDigest.selectByGoal(S.data.tree, goal));
+    S.digestStale = true;
+    rpRecomputeSelCounts();
     rpRenderTabBody();
   }
 
   function rpFindDir(node, path) {
+    if (S.treeMap) return S.treeMap.get(path) || null;
     if (node.path === path) return node;
     for (const d of node.dirs.values()) {
       const r = rpFindDir(d, path);
@@ -949,25 +1098,47 @@
       tmp.innerHTML = rpSelMetaHtml();
       el.replaceWith(tmp.firstChild);
     }
+    rpSyncDirChecks();
+  }
+  /* keep parent folder checkboxes in sync after a single file toggles */
+  function rpSyncDirChecks() {
+    if (!rpEls.body) return;
+    const boxes = rpEls.body.querySelectorAll('input[data-dirpath]');
+    for (const box of boxes) {
+      const node = rpFindDir(S.treeRoot, box.dataset.dirpath);
+      if (node) box.checked = rpDirAllSel(node);
+    }
   }
 
   /* =============== digest generation =============== */
   async function rpGenerate(btn) {
     if (!S.sel.size) { rpToast(t('noSelection')); return; }
+    if (S.generating) return;
+    S.generating = true;
     btn.disabled = true;
     btn.textContent = t('analyzingFiles');
     const st = S.settings;
-    const res = await RPDigest.generate(
-      { meta: S.data.meta, branch: S.data.branch, tree: S.data.tree, sel: S.sel },
-      { preset: st.preset, format: st.format, model: st.model, shrink: st.shrink, sigonly: st.sigonly, readme: st.readme, tree: st.tree, customTask: st.customTask },
-      function (n, total) { btn.textContent = t('generating', { n: n, total: total }); }
-    );
+    let res;
+    try {
+      res = await RPDigest.generate(
+        { meta: S.data.meta, branch: S.data.branch, tree: S.data.tree, sel: S.sel },
+        { preset: st.preset, format: st.format, model: st.model, shrink: st.shrink, sigonly: st.sigonly, readme: st.readme, tree: st.tree, customTask: st.customTask },
+        function (n, total) { btn.textContent = t('generating', { n: n, total: total }); }
+      );
+    } catch (e) {
+      S.generating = false;
+      btn.disabled = false;
+      btn.textContent = t('generate');
+      rpToast(t('networkError'));
+      return;
+    }
+    S.generating = false;
     btn.disabled = false;
     btn.textContent = t('generate');
     if (res.error === 'NO_SELECTION') { rpToast(t('noSelection')); return; }
     if (res.error === 'TOO_BIG') { rpToast(t('selectionTooBig')); return; }
-    S.digestParts = res.parts; S.partIdx = 0; S.digestStats = res.stats;
-    S.smellScan = RPDigest.smellScan(res.sections || []);
+    S.digestParts = res.parts; S.partIdx = 0; S.digestStats = res.stats; S.digestStale = false;
+    S.smellScan = res.smells || RPDigest.smellScan(res.sections || []);
     rpRenderTabBody();
     rpToast(S.digestParts.length > 1 ? t('digestParts', { n: S.digestParts.length }) : t('digestReady'));
   }
@@ -1026,6 +1197,7 @@
   }
 
   function rpToggle(force) {
+    if (!rpEls.panel) return;
     const want = force !== undefined ? force : !S.open;
     S.open = want;
     if (want) {
@@ -1038,12 +1210,17 @@
       try { rpEls.fab.focus(); } catch (e) {}
     }
     rpEls.panel.classList.toggle('rp-open', want);
+    rpEls.panel.inert = !want;
+    rpEls.panel.setAttribute('aria-hidden', want ? 'false' : 'true');
+    rpEls.fab.setAttribute('aria-expanded', want ? 'true' : 'false');
   }
 
   /* =============== messages & soft navigation =============== */
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener(function (msg) {
-      if (msg && msg.type === 'RP_TOGGLE') rpToggle();
+      if (!msg || msg.type !== 'RP_TOGGLE') return;
+      if (!rpNeedsUi()) return;
+      rpRouteSafe().then(function () { rpToggle(); }, function () {});
     });
   }
 
@@ -1055,16 +1232,52 @@
     if (titleEl) new MutationObserver(rpRouteDebounced).observe(titleEl, { childList: true, subtree: true, characterData: true });
   } catch (e) {}
 
-  /* =============== boot =============== */
-  (async function rpBoot() {
-    S.settings = await RPApi.getSettings();
-    RPI18N.init(S.settings.lang);
-    rpMount();
+  /* =============== boot (lazy: non-repo pages stay untouched) =============== */
+  let _booted = false, _booting = null;
+  function rpNeedsUi() { return !!(rpParseRepo() || rpIsSearchPage()); }
+  async function rpEnsureBoot() {
+    if (_booted) return;
+    if (!_booting) {
+      _booting = (async function () {
+        S.settings = await RPApi.getSettings();
+        RPI18N.init(S.settings.lang);
+        rpMount();
+        _booted = true;
+        /* re-detect theme when GitHub toggles it */
+        try {
+          const mo = new MutationObserver(function () { rpApplyDirTheme(); });
+          mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-color-mode', 'data-darktheme'] });
+        } catch (e) {}
+        /* live settings: options page or another tab changed something */
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+          chrome.storage.onChanged.addListener(function (changes, area) {
+            if (area !== 'local') return;
+            if (!Object.keys(changes).some(function (k) { return k in RPApi.DEFAULT_SETTINGS; })) return;
+            RPApi.getSettings({ force: true }).then(function (s) {
+              S.settings = s;
+              RPI18N.init(s.lang);
+              rpRender();
+            }, function () {});
+          });
+        }
+        RPApi.maybePrune(14).catch(function () {});
+      })();
+    }
+    try { await _booting; } catch (e) { _booting = null; throw e; }
+  }
+  async function rpRouteSafe() {
+    if (!rpNeedsUi()) {
+      if (rpEls.host) rpEls.host.style.display = 'none';
+      _repoReq++; _pullReq++; _actReq++; _vulnReq++;
+      S.loading = false; S.pullLoading = false; S.activityLoading = false; S.vulnLoading = false;
+      S.key = null;
+      return;
+    }
+    await rpEnsureBoot();
     rpRoute();
+  }
+  rpRouteSafe().then(function () {
     /* deep link: #repodest opens the sidebar (also used by headless tests) */
-    if (/^#repodest(-open)?$/.test(location.hash)) rpToggle(true);
-    /* re-detect theme when GitHub toggles it */
-    const mo = new MutationObserver(function () { rpApplyDirTheme(); });
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-color-mode', 'data-darktheme'] });
-  })();
+    if (rpNeedsUi() && /^#repodest(-open)?$/.test(location.hash)) rpToggle(true);
+  }, function () {});
 })();

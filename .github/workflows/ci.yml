@@ -22,3 +22,5 @@ jobs:
           exit $fail
       - name: Run test suite
         run: node tests/run-tests.js
+      - name: Build store zips
+        run: node tools/build.mjs dist

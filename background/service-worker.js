@@ -39,17 +39,21 @@ chrome.action.onClicked.addListener(toggleInTab);
    open). */
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (msg && msg.type === 'RP_OSV') {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
     fetch('https://api.osv.dev/v1/querybatch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: msg.body
+      body: msg.body,
+      signal: ctrl ? ctrl.signal : undefined
     })
       .then(function (r) {
         return r.json().then(function (j) {
           sendResponse({ ok: r.ok, results: r.ok ? j.results : null, code: r.ok ? null : 'HTTP_' + r.status });
         });
       })
-      .catch(function () { sendResponse({ ok: false, code: 'NETWORK' }); });
+      .catch(function () { sendResponse({ ok: false, code: 'NETWORK' }); })
+      .then(function () { if (timer) clearTimeout(timer); });
     return true;
   }
 });
