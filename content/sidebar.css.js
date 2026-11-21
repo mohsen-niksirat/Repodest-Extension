@@ -265,6 +265,35 @@ const RP_CSS = `
 .rp-links a:hover { color: var(--accent); }
 .rp-links svg { width: 12px; height: 12px; }
 
+/* ---------- compare (Battle mode) ---------- */
+.rp-cmp-verdict {
+  font-size: 13.5px; font-weight: 800; color: var(--accent);
+  margin-bottom: 10px; line-height: 1.5;
+}
+.rp-cmp-row {
+  display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 6px;
+  align-items: center; padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.rp-cmp-row:last-of-type { border-bottom: none; }
+.rp-cmp-k { color: var(--text2); font-weight: 600; }
+.rp-cmp-val { text-align: center; direction: ltr; color: var(--text2); font-variant-numeric: tabular-nums; }
+.rp-cmp-win { color: var(--green); font-weight: 800; }
+.rp-cmp-head { border-bottom: 1px solid var(--line2); padding-bottom: 7px; }
+.rp-cmp-name {
+  text-align: center; font-weight: 700; font-size: 11px; color: var(--text);
+  direction: ltr; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---------- recent repos ---------- */
+.rp-recent { display: flex; flex-wrap: wrap; gap: 6px; }
+.rp-recent-chip {
+  cursor: pointer; direction: ltr; font-family: inherit;
+  transition: border-color .15s, color .15s;
+}
+.rp-recent-chip:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ---------- toast ---------- */
 .rp-toast {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);

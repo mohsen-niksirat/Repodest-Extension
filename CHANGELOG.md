@@ -4,6 +4,38 @@ All notable changes to **Repodest for GitHub**. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-11-21
+
+Three practical additions on top of the shared Repodest engine — all
+100% client-side, bilingual (EN/FA + RTL) and theme-aware.
+
+### Added
+
+- ⚔️ **Compare tab (Battle mode)** — pit the current repo against any other
+  public repo (`owner/repo` or a GitHub URL, Enter to run). 11 metrics side
+  by side — health, stars, forks, watchers, open issues, size, freshness,
+  license, CI, tests, README — with per-metric winners and an overall
+  verdict. Lower-is-better metrics (issues, size, days since push) are
+  handled correctly; missing data shows as a tie, never a crash. If the
+  other repo's tree needs a token, the four tree-based checks are marked
+  unknown instead of failing.
+- 🕘 **Recent repos** — the Health tab remembers the last 12 repos you
+  analyzed as one-click chips with their health score (stored in
+  `chrome.storage.local`, deduped case-insensitively, capped). A "Clear
+  history" button wipes the list.
+- 📋 **Copy health report** — one click copies a shareable Markdown report
+  (score, 10-check table, repo facts, language breakdown, links) to the
+  clipboard, ready to paste into issues, docs or chats.
+
+### Tests
+
+- 30 new assertions (**153 total**): compare engine (winners, ties,
+  lower-is-better, null safety), recent-history helper (dedupe, cap,
+  invalid entries), Markdown report builder, EN/FA string parity.
+- Verified end-to-end in a real browser via the E2E harness: compare vs
+  `facebook/react`, recent chips across soft navigation, report copy,
+  Persian/RTL rendering.
+
 ## [1.4.0] — 2026-11-11
 
 Performance and reliability pass on top of the shared Repodest engine.

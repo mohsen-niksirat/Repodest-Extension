@@ -26,6 +26,9 @@ A Chrome extension (Manifest V3) that adds a sidebar to GitHub repository and **
 | 🛡️ **Vulnerability Scan** *(v1.3)* | One click scans `package.json` / `requirements.txt` / `pyproject.toml` / `composer.json` / `go.mod` / `Cargo.toml` against the free [OSV.dev](https://osv.dev) database — raw fetches, no API quota |
 | ⚡ **Fast by design** *(v1.4)* | Lazy boot on repo pages only, one settings read per session, parallel GitHub requests, a pre-indexed file tree and 8-way file fetching |
 | 🔎 **Search Badges** *(v1.3)* | Health-score chips right inside GitHub's repository search results (needs a token) |
+| ⚔️ **Compare (Battle mode)** *(v1.5)* | Pit the repo against any other public repo — 11 metrics side by side with per-metric winners and an overall verdict |
+| 🕘 **Recent repos** *(v1.5)* | One-click chips for the last repos you analyzed, with their health scores — stored locally, clearable |
+| 📋 **Copy health report** *(v1.5)* | One click copies a shareable Markdown health report: score, 10-check table, facts, language breakdown |
 | 🌐 **Bilingual** | English & فارسی (RTL) — follows your browser language |
 | 🌗 **Theme-aware** | Matches GitHub's light/dark mode automatically |
 | ♿ **Accessible** *(v1.1)* | ARIA tabs with arrow-key navigation, dialog semantics, focus management |
@@ -89,7 +92,7 @@ Repodest-Extension/
 │   └── content.js             # repo/PR page detection (Turbo-soft-nav aware) + sidebar UI
 ├── background/service-worker.js  # toolbar click / Alt+R → toggle sidebar · OSV.dev bridge
 ├── options/                   # settings page (PAT, language, theme, cache)
-├── tests/                     # 118-test suite + local E2E harness
+├── tests/                     # 153-test suite + local E2E harness
 ├── tools/build.mjs            # zero-dep packer: store zip + Firefox variant
 └── .github/workflows/         # CI (tests on every push) + Release (zips on tag)
 ```
@@ -102,7 +105,7 @@ Repodest-Extension/
 ## 🧪 Tests
 
 ```bash
-node tests/run-tests.js          # 118 assertions: health, digest × 5 formats, PR risk, smells, parsers, OSV client, cache, i18n
+node tests/run-tests.js          # 153 assertions: health, digest × 5 formats, PR risk, smells, parsers, OSV client, cache, compare, report, i18n
 node tests/harness-server.js     # E2E harness → /{owner}/{repo}?lang=fa&theme=light · /search?type=repositories&pat=1
 ```
 

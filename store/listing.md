@@ -58,6 +58,15 @@ Byte-accurate language breakdown using GitHub's own color palette.
 🛡️ VULNERABILITY SCAN
 One click scans the repo's package.json / requirements.txt / pyproject.toml / composer.json / go.mod / Cargo.toml against the free OSV.dev database, with direct links to every advisory.
 
+⚔️ COMPARE — BATTLE MODE (v1.5)
+Pit the repo you're viewing against any other public repo (owner/repo or a GitHub URL). 11 metrics side by side — health, stars, forks, watchers, open issues, size, freshness, license, CI, tests, README — with per-metric winners and an overall verdict.
+
+🕘 RECENT REPOS (v1.5)
+The Health tab remembers the last repos you analyzed as one-click chips with their health scores. Stored only in your browser; clear anytime.
+
+📋 COPY HEALTH REPORT (v1.5)
+One click copies a clean Markdown report — score, 10-check table, repo facts and language breakdown — ready to paste into issues, docs or chats.
+
 🔎 SEARCH BADGES
 Health-score chips right inside GitHub's repository search results (enable by adding a token in Settings).
 
@@ -110,6 +119,15 @@ Free, open source (MIT). Part of the Repodest family:
 
 🛡️ اسکن آسیب‌پذیری
 با یک کلیک، package.json / requirements.txt / pyproject.toml / composer.json / go.mod / Cargo.toml مخزن در برابر پایگاه رایگان OSV.dev اسکن می‌شود، با لینک مستقیم به هر هشدار.
+
+⚔️ مقایسه — حالت بتل (v1.5)
+ریپوی در حال مشاهده را با هر ریپوی عمومی دیگری (owner/repo یا لینک گیت‌هاب) مقایسه کنید. ۱۱ سنجه کنار هم — سلامت، ستاره، فورک، دنبال‌کننده، ایشوهای باز، حجم، تازگی، مجوز، CI، تست، README — با برندهٔ هر سنجه و نتیجهٔ کلی.
+
+🕘 ریپوهای اخیر (v1.5)
+تب سلامت آخرین ریپوهای بررسی‌شده را به‌صورت چیپ‌های یک‌کلیکی با امتیاز سلامت به خاطر می‌سپارد. فقط در مرورگر شما ذخیره می‌شود؛ هر وقت خواستید پاک کنید.
+
+📋 کپی گزارش سلامت (v1.5)
+با یک کلیک یک گزارش Markdown تمیز — امتیاز، جدول ۱۰ بررسی، مشخصات ریپو و تفکیک زبان‌ها — کپی می‌شود، آمادهٔ پیست در ایشوها، مستندات یا چت‌ها.
 
 🔎 نشان‌های جستجو
 چیپ امتیاز سلامت در همین نتایج جستجوی مخازن گیت‌هاب (با افزودن توکن در تنظیمات فعال می‌شود).
@@ -166,11 +184,11 @@ Tip: open `chrome://extensions` → Repodest → Details → and use Windows `Wi
 
 ## 7. Pre-submission checklist
 
-- [x] manifest.json valid MV3, version 1.4.0
+- [x] manifest.json valid MV3, version 1.5.0
 - [x] No remote code, no CDN, no eval — CSP-safe
 - [x] Icons 16/32/48/128 present
 - [x] LICENSE (MIT) bundled
-- [x] 118+ automated tests pass (`tests/run-tests.js`)
+- [x] 153+ automated tests pass (`tests/run-tests.js`)
 - [ ] One-time $5 developer registration fee
-- [ ] Upload `repodest-extension-1.4.0.zip`
+- [ ] Upload `repodest-extension-1.5.0.zip`
 - [ ] Review typically takes 1–3 business days (no broad permissions → fast lane)

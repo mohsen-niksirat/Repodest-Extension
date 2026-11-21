@@ -48,7 +48,9 @@
     pull: null, pullData: null, pullLoading: false, pullError: null, prxFocus: false,
     settings: null, rateShown: false,
     smellScan: null, vulnScan: null, vulnLoading: false, vulnError: null,
-    fileMap: null, treeMap: null, selectableCount: 0, generating: false, health: null
+    fileMap: null, treeMap: null, selectableCount: 0, generating: false, health: null,
+    cmpInput: '', cmpLoading: false, cmpError: null, cmpResult: null,
+    recent: [], recentLoaded: false
   };
   const t = function (key, args) { return RPI18N.t(key, args || {}); };
 
@@ -145,8 +147,8 @@
     const host = rpEls.host;
     if (!r) {
       if (host) host.style.display = 'none';
-      _repoReq++; _pullReq++; _actReq++; _vulnReq++;
-      S.loading = false; S.pullLoading = false; S.activityLoading = false; S.vulnLoading = false;
+      _repoReq++; _pullReq++; _actReq++; _vulnReq++; _cmpReq++;
+      S.loading = false; S.pullLoading = false; S.activityLoading = false; S.vulnLoading = false; S.cmpLoading = false;
       S.key = null;
       return;
     }
@@ -154,7 +156,7 @@
     const key = r.owner + '/' + r.repo;
     const pull = r.pull || null;
     if (key.toLowerCase() !== (S.key || '').toLowerCase()) {
-      _repoReq++; _pullReq++; _actReq++; _vulnReq++;
+      _repoReq++; _pullReq++; _actReq++; _vulnReq++; _cmpReq++;
       S.owner = r.owner; S.repo = r.repo; S.key = key;
       S.data = null; S.loading = false; S.error = null;
       S.activity = null; S.activityLoading = false; S.activityError = null;
@@ -163,6 +165,7 @@
       S.health = null; S.fileMap = null; S.treeMap = null; S.selectableCount = 0;
       S.pull = pull; S.pullData = null; S.pullLoading = false; S.pullError = null;
       S.vulnScan = null; S.vulnLoading = false; S.vulnError = null;
+      S.cmpInput = ''; S.cmpLoading = false; S.cmpError = null; S.cmpResult = null;
       S.prxFocus = !!pull;
       if (S.pull) S.tab = 'prx'; else if (S.tab === 'prx') S.tab = 'health';
       rpRenderChrome();
@@ -195,6 +198,7 @@
 
   /* =============== data loading =============== */
   let _repoReq = 0;
+  let _cmpReq = 0;
   async function rpLoadRepo(force) {
     if (!S.key) return;
     const req = ++_repoReq;
@@ -211,6 +215,7 @@
       S.selectableCount = ((S.data.tree && S.data.tree.tree) || []).reduce(function (n, f) { return n + (RPDigest.isSelectable(f) ? 1 : 0); }, 0);
       rpRecomputeSelCounts();
       S.loading = false;
+      rpRecordRecent();
       rpRender();
     } catch (e) {
       if (req !== _repoReq) return;
@@ -375,6 +380,7 @@
 
   /* arrow-key navigation between tabs (RTL-aware) + Enter/Space on folder carets */
   function rpTabKeys(e) {
+    if (e.key === 'Enter' && e.target && e.target.id === 'rpCmpInput') { e.preventDefault(); rpCompareRun(); return; }
     if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.dataset && e.target.dataset.action === 'exp') {
       e.preventDefault();
       e.target.click();
@@ -411,6 +417,7 @@
     const tabs = [['health', t('tabHealth')], ['digest', t('tabDigest')]];
     if (S.pull) tabs.push(['prx', t('prTab')]);
     tabs.push(['activity', t('tabActivity')]);
+    tabs.push(['compare', t('compareTab')]);
     return tabs.map(function (tb) {
       const sel = S.tab === tb[0];
       return '<button class="rp-tab' + (sel ? ' rp-active' : '') + '" role="tab" aria-selected="' + sel + '" tabindex="' + (sel ? '0' : '-1') + '" data-action="tab" data-tab="' + tb[0] + '">' + esc(tb[1]) + '</button>';
@@ -529,9 +536,10 @@
     }
     if (S.error) { rpEls.body.innerHTML = rpErrorHtml(S.error); return; }
     if (!S.data) { rpEls.body.innerHTML = '<div class="rp-empty">' + esc(t('tagline')) + '</div>'; return; }
-    if (S.tab === 'health') rpEls.body.innerHTML = rpHealthHtml();
+    if (S.tab === 'health') { rpEls.body.innerHTML = rpHealthHtml(); if (!S.recentLoaded) rpLoadRecent(); }
     else if (S.tab === 'digest') rpEls.body.innerHTML = rpDigestHtml();
     else if (S.tab === 'activity') { rpEls.body.innerHTML = rpActivityHtml(); if (!S.activity && !S.activityError) rpLoadActivity(); }
+    else if (S.tab === 'compare') rpEls.body.innerHTML = rpCompareHtml();
   }
 
   function rpErrorHtml(code, retryAction) {
@@ -587,10 +595,11 @@
       ? '<div class="rp-sec"><div class="rp-check bad"><span class="rp-ico">⚠</span><span>' + esc(t('treeTruncatedShort')) + '</span></div></div>'
       : '';
 
-    return descHtml + treeNote +
+    const reportBtn = '<div class="rp-sec"><button class="rp-btn rp-ghost rp-sm" data-action="report">' + esc(t('reportCopy')) + '</button></div>';
+    return descHtml + treeNote + reportBtn +
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('checks')) + '</div><div class="rp-checks">' + checks + '</div></div>' +
       '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('repoFacts')) + '</div><div class="rp-facts">' + facts + '</div></div>' +
-      langsHtml + topicsHtml + rpVulnHtml();
+      langsHtml + topicsHtml + rpVulnHtml() + rpRecentHtml();
   }
 
   /* ---------- security / vulnerability scan (OSV.dev) ---------- */
@@ -960,6 +969,134 @@
     return heat + contribs + commits;
   }
 
+  /* ---------- recent repos (local history, chrome.storage) ---------- */
+  const RP_RECENT_KEY = 'rp_recent';
+  const RP_RECENT_MAX = 12;
+  function rpRecordRecent() {
+    if (!S.key) return;
+    const h = rpHealth();
+    S.recent = RepodestCore.pushRecent(S.recent, { full: S.key, t: Date.now(), score: h ? h.score : null }, RP_RECENT_MAX);
+    RPApi.storeSet({ [RP_RECENT_KEY]: S.recent }).catch(function () {});
+  }
+  async function rpLoadRecent() {
+    S.recentLoaded = true;
+    try {
+      const o = await RPApi.storeGet(RP_RECENT_KEY);
+      const list = (o && o[RP_RECENT_KEY]) || [];
+      S.recent = Array.isArray(list) ? list.filter(function (r) { return r && typeof r.full === 'string'; }).slice(0, RP_RECENT_MAX) : [];
+    } catch (e) { S.recent = []; }
+    if (S.tab === 'health' && S.data && !S.loading) rpRenderTabBody();
+  }
+  function rpRecentHtml() {
+    const list = (S.recent || []).filter(function (r) {
+      return r && r.full && r.full.toLowerCase() !== (S.key || '').toLowerCase();
+    }).slice(0, 8);
+    if (!list.length) return '';
+    const chips = list.map(function (r) {
+      const title = r.full + (r.score != null ? ' — ' + r.score + '/100' : '');
+      return '<button class="rp-chip rp-recent-chip" data-action="recent" data-key="' + esc(r.full) + '" title="' + esc(title) + '">' + esc(r.full) + '</button>';
+    }).join('');
+    return '<div class="rp-sec"><div class="rp-sec-title">' + esc(t('recentTitle')) + '</div>' +
+      '<div class="rp-recent">' + chips + '</div>' +
+      '<button class="rp-btn rp-ghost rp-sm" data-action="recentclear" style="margin-top:8px">' + esc(t('recentClear')) + '</button></div>';
+  }
+
+  /* ---------- compare tab (Battle mode vs any public repo) ---------- */
+  function rpCompareHtml() {
+    let inner = '';
+    if (S.cmpError) {
+      const msg = S.cmpError === 'SAME_REPO' ? t('compareSameRepo')
+        : S.cmpError === 'NOT_FOUND' ? t('notFound')
+        : S.cmpError === 'RATE_LIMIT' ? t('rateLimited')
+        : S.cmpError === 'INVALID' ? t('invalidInput')
+        : t('networkError');
+      inner = '<div class="rp-err"><b>' + esc(t('error')) + '</b>' + esc(msg) + '</div>';
+    }
+    if (S.cmpResult) inner += rpCompareResultHtml(S.cmpResult);
+    return '<div class="rp-sec">' +
+      '<div class="rp-sec-title">⚔️ ' + esc(t('compareTab')) + '</div>' +
+      '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">' + esc(t('compareHint')) + '</div>' +
+      '<label class="rp-label" for="rpCmpInput">' + esc(t('comparePlaceholder')) + '</label>' +
+      '<input id="rpCmpInput" class="rp-input" type="text" dir="ltr" placeholder="facebook/react" value="' + esc(S.cmpInput) + '"' + (S.cmpLoading ? ' disabled' : '') + '>' +
+      '<div class="rp-btnrow" style="margin-top:8px"><button class="rp-btn" data-action="compare"' + (S.cmpLoading ? ' disabled' : '') + '>' +
+      esc(S.cmpLoading ? t('compareLoading') : t('compareBtn')) + '</button></div>' +
+      inner + '</div>';
+  }
+
+  async function rpCompareRun() {
+    if (!S.data || S.cmpLoading) return;
+    const inputEl = rpEls.root.querySelector('#rpCmpInput');
+    const raw = ((inputEl ? inputEl.value : S.cmpInput) || '').trim();
+    S.cmpInput = raw;
+    let m = raw.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/\s?#]|$)/i);
+    if (!m) m = raw.match(/^([\w.-]+)\/([\w.-]+)$/);
+    if (!m) { S.cmpError = 'INVALID'; S.cmpResult = null; rpRenderTabBody(); return; }
+    const owner = m[1], repo = m[2].replace(/\.git$/, '');
+    if ((owner + '/' + repo).toLowerCase() === (S.key || '').toLowerCase()) {
+      S.cmpError = 'SAME_REPO'; S.cmpResult = null; rpRenderTabBody(); return;
+    }
+    const req = ++_cmpReq;
+    S.cmpLoading = true; S.cmpError = null;
+    rpRenderTabBody();
+    try {
+      const other = await RPApi.fetchRepo(owner, repo, {});
+      if (req !== _cmpReq) return; /* navigation or a newer compare won */
+      const hA = rpHealth();
+      const pathsB = (other.tree && other.tree.tree || []).map(function (f) { return f.path; });
+      const hB = other.tree ? healthCheckPaths(pathsB, other.meta) : null;
+      S.cmpResult = RepodestCore.compareRepos(
+        { name: S.key, meta: S.data.meta, health: hA },
+        { name: owner + '/' + repo, meta: other.meta, health: hB }
+      );
+      S.cmpResult.names = [S.key, owner + '/' + repo];
+      S.cmpResult.treeMissing = !other.tree;
+      S.cmpLoading = false;
+      rpRenderTabBody();
+    } catch (e) {
+      if (req !== _cmpReq) return;
+      S.cmpLoading = false;
+      S.cmpError = (e && e.code) || 'NETWORK';
+      S.cmpResult = null;
+      rpRenderTabBody();
+    }
+  }
+
+  function rpCompareResultHtml(res) {
+    const nameA = (res.names && res.names[0]) || 'A';
+    const nameB = (res.names && res.names[1]) || 'B';
+    const verdict = res.overall === 0
+      ? t('compareTie', { a: res.wins.a, b: res.wins.b })
+      : t('compareWins', { name: res.overall === 1 ? nameA : nameB, a: res.wins.a, b: res.wins.b });
+    const labels = {
+      health: t('healthScore'), stars: t('stars'), forks: t('forks'), watchers: t('watchers'),
+      issues: t('openIssues'), size: t('size'), fresh: t('cmpFresh'),
+      license: t('checkLicense'), ci: t('checkCI'), tests: t('checkTests'), readme: t('checkReadme')
+    };
+    const cell = function (row, side) {
+      const v = side === 1 ? row.a : row.b;
+      const win = row.winner === side;
+      let txt;
+      if (v == null) txt = '—';
+      else if (row.key === 'fresh') txt = v + 'd';
+      else if (row.key === 'size') txt = fmtSize(v * 1024);
+      else if (row.key === 'license' || row.key === 'ci' || row.key === 'tests' || row.key === 'readme') txt = v === 1 ? '✓' : '✗';
+      else txt = fmt(v);
+      return '<span class="rp-cmp-val' + (win ? ' rp-cmp-win' : '') + '">' + esc(String(txt)) + (win ? ' 🏆' : '') + '</span>';
+    };
+    const rows = res.rows.map(function (row) {
+      return '<div class="rp-cmp-row"><span class="rp-cmp-k">' + esc(labels[row.key] || row.key) + '</span>' +
+        cell(row, 1) + cell(row, 2) + '</div>';
+    }).join('');
+    const treeNote = res.treeMissing
+      ? '<div style="font-size:11px;color:var(--text3);margin-top:6px">' + esc(t('compareNoTree')) + '</div>' : '';
+    return '<div class="rp-sec rp-cmp">' +
+      '<div class="rp-cmp-verdict">' + esc(verdict) + '</div>' +
+      '<div class="rp-cmp-row rp-cmp-head"><span class="rp-cmp-k"></span>' +
+      '<span class="rp-cmp-name" title="' + esc(nameA) + '">' + esc(nameA) + '</span>' +
+      '<span class="rp-cmp-name" title="' + esc(nameB) + '">' + esc(nameB) + '</span></div>' +
+      rows + treeNote + '</div>';
+  }
+
   /* =============== interactions =============== */
   function rpClick(e) {
     const el = e.target.closest('[data-action]');
@@ -980,6 +1117,22 @@
     else if (a === 'tab') { S.tab = el.dataset.tab; rpRenderChrome(); rpRenderTabBody(); }
     else if (a === 'goal') { rpGoal(el.dataset.goal); }
     else if (a === 'vulnscan') { rpLoadVulns(); }
+    else if (a === 'compare') { rpCompareRun(); }
+    else if (a === 'recent') {
+      const key = el.dataset.key;
+      if (key && /^[\w.-]+\/[\w.-]+$/.test(key)) location.href = 'https://github.com/' + key;
+    }
+    else if (a === 'recentclear') {
+      S.recent = [];
+      RPApi.storeSet({ [RP_RECENT_KEY]: [] }).catch(function () {});
+      rpRenderTabBody();
+    }
+    else if (a === 'report') {
+      const h = rpHealth();
+      if (!h || !S.data) return;
+      const md = RepodestCore.healthReportMarkdown(S.data.meta, h, S.data.langs);
+      rpCopyText(md, function () { rpToast(t('reportCopied')); });
+    }
     else if (a === 'selall') { S.sel = new Set(RPDigest.selectAllText(S.data.tree)); S.digestStale = true; rpRecomputeSelCounts(); rpRenderTabBody(); }
     else if (a === 'collapse') { S.expanded.clear(); rpRefreshTree(); }
     else if (a === 'exp') {
@@ -1054,6 +1207,8 @@
       S.search = el.value;
       clearTimeout(S._searchTimer);
       S._searchTimer = setTimeout(rpRefreshTree, 180);
+    } else if (el.id === 'rpCmpInput') {
+      S.cmpInput = el.value;
     } else if (el.id === 'rpCustomTask') {
       clearTimeout(S._ctTimer);
       S._ctTimer = setTimeout(function () { rpSaveSettings({ customTask: el.value }); }, 400);
@@ -1268,8 +1423,8 @@
   async function rpRouteSafe() {
     if (!rpNeedsUi()) {
       if (rpEls.host) rpEls.host.style.display = 'none';
-      _repoReq++; _pullReq++; _actReq++; _vulnReq++;
-      S.loading = false; S.pullLoading = false; S.activityLoading = false; S.vulnLoading = false;
+      _repoReq++; _pullReq++; _actReq++; _vulnReq++; _cmpReq++;
+      S.loading = false; S.pullLoading = false; S.activityLoading = false; S.vulnLoading = false; S.cmpLoading = false;
       S.key = null;
       return;
     }
