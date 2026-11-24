@@ -414,7 +414,7 @@
   }
 
   function rpTabsHtml() {
-    const tabs = [['health', t('tabHealth')], ['digest', t('tabDigest')]];
+    const tabs = [['health', t('tabHealth')], ['digest', t('tabDigest')], ['diagram', 'Diagram']];
     if (S.pull) tabs.push(['prx', t('prTab')]);
     tabs.push(['activity', t('tabActivity')]);
     tabs.push(['compare', t('compareTab')]);
@@ -538,6 +538,7 @@
     if (!S.data) { rpEls.body.innerHTML = '<div class="rp-empty">' + esc(t('tagline')) + '</div>'; return; }
     if (S.tab === 'health') { rpEls.body.innerHTML = rpHealthHtml(); if (!S.recentLoaded) rpLoadRecent(); }
     else if (S.tab === 'digest') rpEls.body.innerHTML = rpDigestHtml();
+    else if (S.tab === 'diagram') rpEls.body.innerHTML = rpDiagramHtml();
     else if (S.tab === 'activity') { rpEls.body.innerHTML = rpActivityHtml(); if (!S.activity && !S.activityError) rpLoadActivity(); }
     else if (S.tab === 'compare') rpEls.body.innerHTML = rpCompareHtml();
   }
@@ -1097,6 +1098,50 @@
       rows + treeNote + '</div>';
   }
 
+  /* =============== Architecture Diagram tab (GitDiagram-style) =============== */
+  function rpDiagramHtml() {
+    if (!S.data || !S.data.meta) return '';
+    const paths = (S.data.tree && S.data.tree.tree || []).map(function (f) { return f.path; });
+    const built = RepodestCore.buildArchDiagram(paths, S.data.meta, { maxPerLayer: 5 });
+    const branch = (S.data.meta && S.data.meta.default_branch) || 'main';
+    const fullName = (S.data.meta && S.data.meta.full_name) || S.key || '';
+    const webUrl = RP_LINKS.web + '?repo=' + encodeURIComponent(fullName) + '#diagram';
+
+    const layersHtml = built.layers.map(function (l, idx) {
+      const pills = l.nodes.map(function (nid) {
+        const info = built.nodeMap[nid];
+        if (!info) return '';
+        const href = 'https://github.com/' + fullName + '/' + (info.isDir ? 'tree' : 'blob') + '/' + encodeURIComponent(branch) + '/' + info.path;
+        return '<a href="' + esc(href) + '" target="_blank" rel="noopener" style="display:inline-block;margin:3px 4px 3px 0;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--text);font-family:var(--mono);font-size:11px;text-decoration:none" title="' + esc(info.path) + '">' + esc(info.label) + '</a>';
+      }).join('');
+      const arrow = idx < built.layers.length - 1
+        ? '<div style="text-align:center;color:var(--text3);font-size:12px;margin:4px 0">↓</div>' : '';
+      return '<div style="border-left:3px solid ' + l.color + ';background:var(--bg2);border-radius:8px;padding:8px 10px;margin-bottom:4px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+        '  <b style="font-size:12px;color:' + l.color + '">' + esc(l.title) + '</b>' +
+        '  <span style="font-size:10.5px;color:var(--text3)">' + l.total + ' files</span>' +
+        '</div>' +
+        '<div>' + pills + '</div>' +
+        '</div>' + arrow;
+    }).join('');
+
+    return '<div class="rp-sec">' +
+      '<div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">' +
+      '  ' + built.stats.layers + ' architectural layers · ' + built.stats.nodes + ' key components · click any node to open on GitHub' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' +
+      '  <button class="rp-btn rp-sm" data-action="diagcopy">Copy Mermaid</button>' +
+      '  <button class="rp-btn rp-ghost rp-sm" data-action="diagprompt">✨ Copy AI Prompt</button>' +
+      '  <a class="rp-btn rp-ghost rp-sm" href="' + esc(webUrl) + '" target="_blank" rel="noopener" style="text-decoration:none">Interactive SVG ↗</a>' +
+      '</div>' +
+      layersHtml +
+      '<details style="margin-top:12px">' +
+      '  <summary style="cursor:pointer;font-size:11.5px;color:var(--text3)">View Mermaid (.mmd) source</summary>' +
+      '  <pre style="margin-top:8px;padding:10px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-family:var(--mono);font-size:10.5px;overflow-x:auto;white-space:pre-wrap;color:var(--text2)">' + esc(built.mermaid) + '</pre>' +
+      '</details>' +
+      '</div>';
+  }
+
   /* =============== interactions =============== */
   function rpClick(e) {
     const el = e.target.closest('[data-action]');
@@ -1132,6 +1177,18 @@
       if (!h || !S.data) return;
       const md = RepodestCore.healthReportMarkdown(S.data.meta, h, S.data.langs);
       rpCopyText(md, function () { rpToast(t('reportCopied')); });
+    }
+    else if (a === 'diagcopy') {
+      if (!S.data) return;
+      const paths = (S.data.tree && S.data.tree.tree || []).map(function (f) { return f.path; });
+      const built = RepodestCore.buildArchDiagram(paths, S.data.meta);
+      rpCopyText(built.mermaid, function () { rpToast('Mermaid code copied'); });
+    }
+    else if (a === 'diagprompt') {
+      if (!S.data) return;
+      const paths = (S.data.tree && S.data.tree.tree || []).map(function (f) { return f.path; });
+      const prompt = RepodestCore.buildDiagramPrompt(paths, S.data.meta, '');
+      rpCopyText(prompt, function () { rpToast('AI Diagram prompt copied'); });
     }
     else if (a === 'selall') { S.sel = new Set(RPDigest.selectAllText(S.data.tree)); S.digestStale = true; rpRecomputeSelCounts(); rpRenderTabBody(); }
     else if (a === 'collapse') { S.expanded.clear(); rpRefreshTree(); }
