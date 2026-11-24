@@ -1111,37 +1111,7 @@
   }
 
   function rpDiagramSvgHtml(graph) {
-    const groups = graph.groups || [];
-    const W = 340, pad = 10, boxPad = 8, pillH = 22, gapY = 12;
-    let y = pad;
-    const parts = [];
-    groups.forEach(function (g) {
-      const nodeIds = g.nodes || [];
-      const cols = 2;
-      const rows = Math.max(1, Math.ceil(nodeIds.length / cols));
-      const boxH = 26 + rows * (pillH + 6) + boxPad;
-      parts.push('<rect x="' + pad + '" y="' + y + '" width="' + (W - pad * 2) + '" height="' + boxH + '" rx="8" fill="' + esc(g.bg) + '" stroke="' + esc(g.color) + '" stroke-width="1.2"/>');
-      parts.push('<text x="' + (pad + 10) + '" y="' + (y + 17) + '" fill="' + esc(g.color) + '" font-size="11" font-weight="700" font-family="system-ui,sans-serif">' + esc(g.title) + ' (' + g.total + ')</text>');
-      const colW = (W - pad * 2 - 20 - 6) / cols;
-      nodeIds.forEach(function (nid, i) {
-        const nd = graph.nodes[nid];
-        if (!nd) return;
-        const r = Math.floor(i / cols), c = i % cols;
-        const nx = pad + 10 + c * (colW + 6);
-        const ny = y + 26 + r * (pillH + 6);
-        const shortLbl = nd.label.length > 20 ? nd.label.slice(0, 19) + '…' : nd.label;
-        const rectEl = '<rect x="' + nx + '" y="' + ny + '" width="' + colW + '" height="' + pillH + '" rx="5" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.14)" stroke-width="0.8"/>' +
-          '<text x="' + (nx + 6) + '" y="' + (ny + 14.5) + '" fill="#e2e8f0" font-size="10" font-family="ui-monospace,monospace">' + esc(shortLbl) + '</text>';
-        if (nd.url && !nd.isOverflow) {
-          parts.push('<a href="' + esc(nd.url) + '" target="_blank" rel="noopener noreferrer"><title>' + esc(nd.path) + '</title>' + rectEl + '</a>');
-        } else {
-          parts.push('<g>' + rectEl + '</g>');
-        }
-      });
-      y += boxH + gapY;
-    });
-    const H = Math.max(120, y);
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="display:block;border-radius:10px;background:#0a0e14;border:1px solid var(--line)" role="img" aria-label="Repository architecture diagram">' + parts.join('') + '</svg>';
+    return RepodestCore.graphToSvg(graph);
   }
 
   function rpDiagramHtml() {

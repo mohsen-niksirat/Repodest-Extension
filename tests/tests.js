@@ -619,6 +619,72 @@ var T_SEQ = Promise.all(T_PENDING).then(function () {
   RPI18N.init('en');
 })();
 
+/* ========== v1.6: Architecture Diagram engine & SVG renderer ========== */
+(function () {
+  console.log('v1.6 architecture diagram');
+  var meta = { full_name: 'acme/app', default_branch: 'feat/login', description: 'Test app' };
+  var paths = [
+    'src/components/App.tsx',
+    'src/api/auth.ts',
+    'src/core/engine.ts',
+    'data/schema.sql',
+    'package.json',
+    'tests/engine.test.ts',
+    'docs/guide.md'
+  ];
+  var built = RepodestCore.buildArchDiagram(paths, meta);
+  T_OK(built.graph && built.graph.groups.length >= 5, 'buildArchGraph classifies repo into layers');
+  T_OK(built.stats.edges === 0, 'no fabricated edges when no import evidence exists');
+  T_OK(built.mermaid.indexOf('HTTP / RPC') === -1, 'Mermaid contains no fabricated HTTP/RPC edge');
+
+  var withImp = RepodestCore.buildArchDiagram(['src/components/App.tsx', 'data/schema.sql'], meta, {
+    importEdges: [{ from: 'src/components/App.tsx', to: 'data/schema.sql', label: 'imports' }]
+  });
+  T_OK(withImp.stats.edges === 1 && withImp.graph.edges[0].evidence === 'import', 'import evidence edge is typed as import');
+
+  /* validateArchGraph drops fake nodes & dangling edges */
+  var g = RepodestCore.buildArchGraph(['src/a.js'], meta);
+  g.nodes.N_FAKE = { id: 'N_FAKE', label: 'fake.js', path: 'src/missing.js', isDir: false, layer: 'core', count: 1, shape: 'rect', url: '', isOverflow: false };
+  g.groups[0].nodes.push('N_FAKE');
+  g.edges.push({ from: 'N1', to: 'N_FAKE', label: 'bad', evidence: 'import' });
+  var val = RepodestCore.validateArchGraph(g, ['src/a.js']);
+  T_OK(val.droppedNodes === 1 && val.droppedEdges === 1, 'validateArchGraph drops non-existent nodes and dangling edges');
+
+  /* encodeGitHubPath & buildGitHubUrl */
+  var u1 = RepodestCore.buildGitHubUrl('acme/app', 'feat/login', 'src/my file#2.ts', false);
+  T_OK(u1 === 'https://github.com/acme/app/blob/feat/login/src/my%20file%232.ts', 'encodes spaces, # and preserves slash branch');
+  var u2 = RepodestCore.buildGitHubUrl('acme/app', 'main', 'a+b/c%d.md', false);
+  T_OK(u2 === 'https://github.com/acme/app/blob/main/a%2Bb/c%25d.md', 'encodes + and % segments');
+  var u3 = RepodestCore.buildGitHubUrl('acme/app', 'main', 'docs/فایل.md', false);
+  T_OK(u3.indexOf(encodeURIComponent('فایل.md')) !== -1, 'encodes Persian filename');
+  var u4 = RepodestCore.buildGitHubUrl('acme/app', 'feat/x', 'src/dir', true);
+  T_OK(u4 === 'https://github.com/acme/app/tree/feat/x/src/dir', 'builds tree URL for directories');
+
+  /* safeDiagramLabel hostile fixtures */
+  var hostile = ['src/evil"quote\nline{x}#y.js', 'src/--leading.js', 'src/🚀emoji.js', 'src/' + 'a'.repeat(280) + '.ts'];
+  var hBuilt = RepodestCore.buildArchDiagram(hostile, meta);
+  T_OK(hBuilt.mermaid.indexOf('evil"quote') === -1 && hBuilt.mermaid.indexOf('{x}') === -1, 'safeDiagramLabel strips quotes and braces');
+  T_OK(RepodestCore.safeDiagramLabel('-->bad').indexOf('-') !== 0, 'safeDiagramLabel strips leading arrow chars');
+  T_OK(RepodestCore.safeDiagramLabel('x'.repeat(300)).length <= 48, 'safeDiagramLabel caps length');
+
+  /* Duplicate basenames & overflow */
+  var dups = RepodestCore.buildArchDiagram(['src/index.js', 'lib/index.js'], meta);
+  T_OK(dups.mermaid.indexOf('src/index.js') !== -1 && dups.mermaid.indexOf('lib/index.js') !== -1, 'disambiguates duplicate basenames');
+  var many = [];
+  for (var k = 0; k < 10; k++) many.push('src/m' + k + '/f.js');
+  var capped = RepodestCore.buildArchDiagram(many, meta, { maxPerLayer: 3 });
+  T_OK(capped.mermaid.indexOf('+7 more files') !== -1 && capped.stats.shownFiles < capped.stats.totalFiles, 'overflow node shown and shownFiles < totalFiles');
+
+  /* graphToSvg HTML escaping & github.com-only links */
+  var xssBuilt = RepodestCore.buildArchDiagram(['src/x"><svg onload=1>.js'], meta);
+  var svg = RepodestCore.graphToSvg(xssBuilt.graph);
+  T_OK(svg.indexOf('<svg onload=1>') === -1 && svg.indexOf('https://github.com/acme/app/') !== -1, 'graphToSvg escapes hostile filenames and keeps github.com links');
+
+  /* extractMermaidBlock rejects prose */
+  T_OK(RepodestCore.extractMermaidBlock('Just plain English prose') === '', 'extractMermaidBlock rejects non-diagram prose');
+  T_OK(RepodestCore.extractMermaidBlock('```mermaid\nflowchart TD\nA-->B\n```') === 'flowchart TD\nA-->B', 'extractMermaidBlock extracts fenced mermaid');
+})();
+
 globalThis.__RP_RESULTS_PROMISE = T_SEQ.then(function () {
   return { passed: T_PASSED, failed: T_FAILED };
 });
