@@ -1098,46 +1098,93 @@
       rows + treeNote + '</div>';
   }
 
-  /* =============== Architecture Diagram tab (GitDiagram-style) =============== */
-  function rpDiagramHtml() {
-    if (!S.data || !S.data.meta) return '';
-    const paths = (S.data.tree && S.data.tree.tree || []).map(function (f) { return f.path; });
-    const built = RepodestCore.buildArchDiagram(paths, S.data.meta, { maxPerLayer: 5 });
+  /* =============== Architecture Diagram tab (GitDiagram-grade, CSP-safe local SVG + List) =============== */
+  function rpGetDiagram() {
+    if (!S.data || !S.data.meta) return null;
     const branch = (S.data.meta && S.data.meta.default_branch) || 'main';
+    const key = (S.key || '') + '@' + branch;
+    if (S._diagCache && S._diagCache.key === key) return S._diagCache.built;
+    const paths = (S.data.tree && S.data.tree.tree || []).map(function (f) { return f.path; });
+    const built = RepodestCore.buildArchDiagram(paths, S.data.meta, { maxPerLayer: 5, truncated: !!(S.data.tree && S.data.tree.truncated) });
+    S._diagCache = { key: key, built: built };
+    return built;
+  }
+
+  function rpDiagramSvgHtml(graph) {
+    const groups = graph.groups || [];
+    const W = 340, pad = 10, boxPad = 8, pillH = 22, gapY = 12;
+    let y = pad;
+    const parts = [];
+    groups.forEach(function (g) {
+      const nodeIds = g.nodes || [];
+      const cols = 2;
+      const rows = Math.max(1, Math.ceil(nodeIds.length / cols));
+      const boxH = 26 + rows * (pillH + 6) + boxPad;
+      parts.push('<rect x="' + pad + '" y="' + y + '" width="' + (W - pad * 2) + '" height="' + boxH + '" rx="8" fill="' + esc(g.bg) + '" stroke="' + esc(g.color) + '" stroke-width="1.2"/>');
+      parts.push('<text x="' + (pad + 10) + '" y="' + (y + 17) + '" fill="' + esc(g.color) + '" font-size="11" font-weight="700" font-family="system-ui,sans-serif">' + esc(g.title) + ' (' + g.total + ')</text>');
+      const colW = (W - pad * 2 - 20 - 6) / cols;
+      nodeIds.forEach(function (nid, i) {
+        const nd = graph.nodes[nid];
+        if (!nd) return;
+        const r = Math.floor(i / cols), c = i % cols;
+        const nx = pad + 10 + c * (colW + 6);
+        const ny = y + 26 + r * (pillH + 6);
+        const shortLbl = nd.label.length > 20 ? nd.label.slice(0, 19) + '…' : nd.label;
+        const rectEl = '<rect x="' + nx + '" y="' + ny + '" width="' + colW + '" height="' + pillH + '" rx="5" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.14)" stroke-width="0.8"/>' +
+          '<text x="' + (nx + 6) + '" y="' + (ny + 14.5) + '" fill="#e2e8f0" font-size="10" font-family="ui-monospace,monospace">' + esc(shortLbl) + '</text>';
+        if (nd.url && !nd.isOverflow) {
+          parts.push('<a href="' + esc(nd.url) + '" target="_blank" rel="noopener noreferrer"><title>' + esc(nd.path) + '</title>' + rectEl + '</a>');
+        } else {
+          parts.push('<g>' + rectEl + '</g>');
+        }
+      });
+      y += boxH + gapY;
+    });
+    const H = Math.max(120, y);
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="display:block;border-radius:10px;background:#0a0e14;border:1px solid var(--line)" role="img" aria-label="Repository architecture diagram">' + parts.join('') + '</svg>';
+  }
+
+  function rpDiagramHtml() {
+    const built = rpGetDiagram();
+    if (!built) return '';
+    const graph = built.graph;
     const fullName = (S.data.meta && S.data.meta.full_name) || S.key || '';
     const webUrl = RP_LINKS.web + '?repo=' + encodeURIComponent(fullName) + '#diagram';
+    const isList = S.diagView === 'list';
 
-    const layersHtml = built.layers.map(function (l, idx) {
+    const listHtml = graph.groups.map(function (l) {
       const pills = l.nodes.map(function (nid) {
-        const info = built.nodeMap[nid];
+        const info = graph.nodes[nid];
         if (!info) return '';
-        const href = 'https://github.com/' + fullName + '/' + (info.isDir ? 'tree' : 'blob') + '/' + encodeURIComponent(branch) + '/' + info.path;
-        return '<a href="' + esc(href) + '" target="_blank" rel="noopener" style="display:inline-block;margin:3px 4px 3px 0;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--text);font-family:var(--mono);font-size:11px;text-decoration:none" title="' + esc(info.path) + '">' + esc(info.label) + '</a>';
+        if (!info.url || info.isOverflow) {
+          return '<span style="display:inline-block;margin:3px 4px 3px 0;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.04);color:var(--text3);font-family:var(--mono);font-size:11px">' + esc(info.label) + '</span>';
+        }
+        return '<a href="' + esc(info.url) + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:3px 4px 3px 0;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--text);font-family:var(--mono);font-size:11px;text-decoration:none" title="' + esc(info.path) + '">' + esc(info.label) + '</a>';
       }).join('');
-      const arrow = idx < built.layers.length - 1
-        ? '<div style="text-align:center;color:var(--text3);font-size:12px;margin:4px 0">↓</div>' : '';
-      return '<div style="border-left:3px solid ' + l.color + ';background:var(--bg2);border-radius:8px;padding:8px 10px;margin-bottom:4px">' +
+      return '<div style="border-left:3px solid ' + l.color + ';background:var(--bg2);border-radius:8px;padding:8px 10px;margin-bottom:8px">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
         '  <b style="font-size:12px;color:' + l.color + '">' + esc(l.title) + '</b>' +
-        '  <span style="font-size:10.5px;color:var(--text3)">' + l.total + ' files</span>' +
+        '  <span style="font-size:10.5px;color:var(--text3)">' + l.shown + '/' + l.total + ' files</span>' +
         '</div>' +
         '<div>' + pills + '</div>' +
-        '</div>' + arrow;
+        '</div>';
     }).join('');
 
     return '<div class="rp-sec">' +
-      '<div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">' +
-      '  ' + built.stats.layers + ' architectural layers · ' + built.stats.nodes + ' key components · click any node to open on GitHub' +
+      '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">' +
+      '  Heuristic structural map · ' + built.stats.layers + ' layers · ' + built.stats.shownFiles + '/' + built.stats.totalFiles + ' files · click any node to open on GitHub' +
       '</div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' +
+      '  <button class="rp-btn rp-ghost rp-sm" data-action="diagview">' + (isList ? 'SVG Diagram' : 'List View') + '</button>' +
       '  <button class="rp-btn rp-sm" data-action="diagcopy">Copy Mermaid</button>' +
-      '  <button class="rp-btn rp-ghost rp-sm" data-action="diagprompt">✨ Copy AI Prompt</button>' +
-      '  <a class="rp-btn rp-ghost rp-sm" href="' + esc(webUrl) + '" target="_blank" rel="noopener" style="text-decoration:none">Interactive SVG ↗</a>' +
+      '  <button class="rp-btn rp-ghost rp-sm" data-action="diagjson">Copy JSON</button>' +
+      '  <button class="rp-btn rp-ghost rp-sm" data-action="diagprompt">Copy AI Prompt</button>' +
+      '  <a class="rp-btn rp-ghost rp-sm" href="' + esc(webUrl) + '" target="_blank" rel="noopener noreferrer" style="text-decoration:none">Full Interactive ↗</a>' +
       '</div>' +
-      layersHtml +
-      '<details style="margin-top:12px">' +
+      (isList ? listHtml : rpDiagramSvgHtml(graph)) +
+      '<details style="margin-top:10px">' +
       '  <summary style="cursor:pointer;font-size:11.5px;color:var(--text3)">View Mermaid (.mmd) source</summary>' +
-      '  <pre style="margin-top:8px;padding:10px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-family:var(--mono);font-size:10.5px;overflow-x:auto;white-space:pre-wrap;color:var(--text2)">' + esc(built.mermaid) + '</pre>' +
+      '  <pre dir="ltr" style="margin-top:8px;padding:10px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-family:var(--mono);font-size:10.5px;overflow-x:auto;white-space:pre-wrap;color:var(--text2)">' + esc(built.mermaid) + '</pre>' +
       '</details>' +
       '</div>';
   }
@@ -1178,11 +1225,19 @@
       const md = RepodestCore.healthReportMarkdown(S.data.meta, h, S.data.langs);
       rpCopyText(md, function () { rpToast(t('reportCopied')); });
     }
+    else if (a === 'diagview') {
+      S.diagView = S.diagView === 'list' ? 'svg' : 'list';
+      rpRenderTabBody();
+    }
     else if (a === 'diagcopy') {
-      if (!S.data) return;
-      const paths = (S.data.tree && S.data.tree.tree || []).map(function (f) { return f.path; });
-      const built = RepodestCore.buildArchDiagram(paths, S.data.meta);
+      const built = rpGetDiagram();
+      if (!built) return;
       rpCopyText(built.mermaid, function () { rpToast('Mermaid code copied'); });
+    }
+    else if (a === 'diagjson') {
+      const built = rpGetDiagram();
+      if (!built) return;
+      rpCopyText(JSON.stringify(built.graph, null, 2), function () { rpToast('Graph JSON copied'); });
     }
     else if (a === 'diagprompt') {
       if (!S.data) return;
