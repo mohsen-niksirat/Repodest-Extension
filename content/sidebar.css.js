@@ -7,25 +7,27 @@ const RP_CSS = `
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .rp-root {
-  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
-  --card: rgba(22, 27, 34, .92); --solid: #161b22;
-  --line: #30363d; --line2: #3d444d;
-  --text: #e6edf3; --text2: #9198a1; --text3: #6e7681;
-  --accent: #a855f7; --accent2: #22d3ee;
-  --green: #22c55e; --yellow: #eab308; --orange: #f97316; --red: #ef4444;
-  --shadow: 0 8px 32px rgba(0,0,0,.45);
+  --bg: #0A0E14; --bg2: #0E141D; --bg3: #182231;
+  --card: rgba(17, 24, 38, .96); --solid: #111826;
+  --line: #212D3E; --line2: #2E3D52;
+  --text: #E8ECF4; --text2: #9AA6B8; --text3: #8593A9;
+  --accent: #34D399; --accent2: #67E8F9;
+  --green: #34D399; --yellow: #FBBF24; --orange: #F97316; --red: #F87171;
+  --shadow: 0 12px 32px -12px rgba(2, 6, 12, .65);
   --radius: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Vazirmatn', 'Tahoma', sans-serif;
-  font-size: 13px; line-height: 1.45;
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Vazirmatn', sans-serif;
+  font-size: 13px; line-height: 1.5;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
 .rp-root[data-theme="light"] {
-  --bg: #ffffff; --bg2: #f6f8fa; --bg3: #eff2f5;
-  --card: rgba(255,255,255,.96); --solid: #ffffff;
-  --line: #d0d7de; --line2: #afb8c1;
-  --text: #1f2328; --text2: #59636e; --text3: #818b98;
-  --shadow: 0 8px 32px rgba(140,149,159,.25);
+  --bg: #F8FAFC; --bg2: #F1F5F9; --bg3: #E2E8F0;
+  --card: rgba(255, 255, 255, .98); --solid: #FFFFFF;
+  --line: #E2E8F0; --line2: #CBD5E1;
+  --text: #0F172A; --text2: #475569; --text3: #64748B;
+  --accent: #059669; --accent2: #0891B2;
+  --shadow: 0 10px 28px -12px rgba(15, 23, 42, .16);
 }
 .rp-root { position: static; }
 .mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace; }
